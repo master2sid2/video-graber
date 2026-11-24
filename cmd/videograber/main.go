@@ -74,7 +74,7 @@ func run() error {
 	var yt *extract.YtDlp
 	if cfg.YtDlp != "" {
 		yt = &extract.YtDlp{
-			Path: cfg.YtDlp, ExtraArgs: cfg.YtDlpArgs, Proxy: cfg.Proxy, CookiesFile: cfg.CookiesFile,
+			Path: cfg.YtDlp, ExtraArgs: cfg.YtDlpArgs, Proxy: cfg.Proxy,
 			Hosts: cfg.YtDlpHosts, TempDir: cfg.TempDir, Log: log,
 		}
 	}
@@ -124,7 +124,7 @@ func run() error {
 		Log: log, AccessSink: accessSink, Web: webFS, Version: version,
 	})
 	jm.OnFinish = srv.OnJobFinished
-	srv.PurgeSharedCookies(ctx)
+	srv.PurgeGlobalCookies(ctx)
 	jm.Store = jobStore{st}
 	if err := jm.Restore(); err != nil {
 		log.Warn("cannot restore the job queue", "err", err)

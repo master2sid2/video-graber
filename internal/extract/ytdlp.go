@@ -20,13 +20,12 @@ import (
 // path with -ytdlp. It is used for YouTube and many other well known sites,
 // and as a fallback when the generic extractor finds nothing.
 type YtDlp struct {
-	Path        string
-	ExtraArgs   []string
-	Proxy       string
-	CookiesFile string // global cookies.txt from -cookies-file
-	Hosts       []string
-	TempDir     string
-	Log         *slog.Logger
+	Path      string
+	ExtraArgs []string
+	Proxy     string
+	Hosts     []string
+	TempDir   string
+	Log       *slog.Logger
 }
 
 // DefaultYtDlpHosts are sites that are always delegated to yt-dlp.
@@ -45,17 +44,11 @@ func (y *YtDlp) Match(u *url.URL) bool {
 	return hostMatches(u.Hostname(), DefaultYtDlpHosts...) || hostMatches(u.Hostname(), y.Hosts...)
 }
 
-// cookiesTemp writes cookies to a private temp file. yt-dlp rewrites the
-// cookie file it is given, so every call works on its own copy.
+// cookiesTemp writes the user's cookies to a private temp file. yt-dlp
+// rewrites the cookie file it is given, so every call works on its own copy.
+// Cookies are strictly personal: there is no global fallback.
 func (y *YtDlp) cookiesTemp(cookies string) (string, func(), error) {
 	src := []byte(cookies)
-	if len(bytes.TrimSpace(src)) == 0 && y.CookiesFile != "" {
-		b, err := os.ReadFile(y.CookiesFile)
-		if err != nil {
-			return "", nil, fmt.Errorf("read cookies file: %w", err)
-		}
-		src = b
-	}
 	if len(bytes.TrimSpace(src)) == 0 {
 		return "", func() {}, nil
 	}

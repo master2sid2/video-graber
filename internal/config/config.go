@@ -49,10 +49,9 @@ type Config struct {
 	Chrome         string
 	BrowserTimeout time.Duration
 
-	CookiesFile string
-	Proxy       string
-	UserAgent   string
-	ReportURL   string
+	Proxy     string
+	UserAgent string
+	ReportURL string
 
 	MaxJobs        int
 	TempTTL        time.Duration
@@ -130,7 +129,6 @@ func Parse(args []string) (*Config, error) {
 	fs.StringVar(&c.Chrome, "chrome", envOr("chrome", ""), "path to Chrome/Chromium for headless extraction (\"auto\": look up in PATH, empty: disabled)")
 	fs.DurationVar(&c.BrowserTimeout, "browser-timeout", envDuration("browser-timeout", 30*time.Second), "max time to wait for media in the headless browser")
 
-	fs.StringVar(&c.CookiesFile, "cookies-file", envOr("cookies-file", ""), "global Netscape cookies.txt passed to yt-dlp")
 	fs.StringVar(&c.Proxy, "proxy", envOr("proxy", ""), "HTTP(S)/SOCKS proxy for outgoing requests, yt-dlp and ffmpeg")
 	fs.StringVar(&c.ReportURL, "report-url", envOr("report-url", DefaultReportURL), "where users report unsupported sites (URL or mailto:; {url}, {title}, {body} are replaced; \"off\" hides the button)")
 	fs.StringVar(&c.UserAgent, "user-agent", envOr("user-agent", DefaultUserAgent), "User-Agent for outgoing requests")

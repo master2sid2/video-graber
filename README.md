@@ -21,9 +21,9 @@ them, optionally converting them on the fly with ffmpeg.
 * **Batch downloads** – select several episodes in the film strip; the closest
   quality and the same voice-over are used for each.
 * **YouTube** through the external [yt-dlp](https://github.com/yt-dlp/yt-dlp)
-  binary, including per-user `cookies.txt` for servers on cloud IPs.
+  binary, with personal `cookies.txt` per user for servers on cloud IPs.
 * **Two modes** – *shared* (one interface for everybody, no login) and
-  *individual* (accounts, history, categories, per-user cookies, invite links).
+  *individual* (accounts, history, categories, personal cookies, invite links).
 * **Separate app and access logs**, each to stdout/stderr/any number of files,
   text or JSON, reopened on `SIGHUP` for logrotate.
 * Plain HTML/CSS/ES-module UI without a build step, embedded into the binary.
@@ -99,7 +99,6 @@ name in upper case with dashes replaced by underscores (`-max-jobs` →
 | `-ytdlp` | look up `yt-dlp` in PATH | path, or `off` |
 | `-ytdlp-args` | – | extra arguments for every yt-dlp call |
 | `-ytdlp-hosts` | – | extra comma separated hosts always handled by yt-dlp |
-| `-cookies-file` | – | global Netscape `cookies.txt` for yt-dlp |
 | `-chrome` | disabled | Chrome/Chromium path or `auto` |
 | `-browser-timeout` | `30s` | how long the headless browser waits for media |
 | `-proxy` | – | proxy for page requests, yt-dlp, ffmpeg and Chrome |
@@ -135,23 +134,18 @@ Send `SIGHUP` after rotating to reopen all log files.
 
 YouTube frequently refuses requests from datacenter IPs. Cookies of a
 signed-in session (exported from a private window in the Netscape
-`cookies.txt` format) help:
+`cookies.txt` format) help.
 
-* **Individual mode** — every user uploads their own cookies under
-  **Settings → YouTube cookies**; they are used only for that user's
-  downloads. Administrators can add global cookies (Admin → Global cookies)
-  used by users without their own.
-* **Shared mode** — cookies **cannot** be uploaded through the UI: without
-  accounts anybody could replace them, and every visitor would download as
-  that account. Only the server administrator can provide them with
-  `-cookies-file`; the UI shows a read-only status. Use a dedicated YouTube
-  account for this, never a personal one. Cookies uploaded through the
-  shared UI by older versions are deleted at startup.
+Cookies are **strictly personal**: in individual mode every user uploads
+their own under **Settings → YouTube cookies**, and they are used only for
+that user's downloads. There are no global or administrator cookies and no
+server-wide cookies file, so nobody ever downloads with somebody else's
+account. Shared mode has no accounts and therefore no cookies at all.
+(Instance-wide cookies stored by older versions are deleted at startup.)
 
-`-cookies-file` is also the fallback in individual mode. Each yt-dlp call
-works on a private temporary copy, because yt-dlp rewrites cookie files.
-Cookie values are never sent back to the browser — the UI only shows how
-many cookies and domains are stored.
+Each yt-dlp call works on a private temporary copy of the user's cookies,
+because yt-dlp rewrites cookie files. Cookie values are never sent back to
+the browser — the UI only shows how many cookies and domains are stored.
 
 ## Security notes
 

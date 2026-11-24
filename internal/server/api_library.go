@@ -393,45 +393,4 @@ func (s *Server) handleDeleteInvite(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (s *Server) globalCookiesInfo(w http.ResponseWriter, r *http.Request) {
-	c, err := s.store.GetSetting(r.Context(), globalCookiesKey)
-	if err != nil {
-		s.internalError(w, r, err)
-		return
-	}
-	n, d := cookieStats(c)
-	writeJSON(w, http.StatusOK, cookiesInfo{Scope: "global", Present: n > 0, Count: n, Domains: d, Global: n > 0, File: s.cfg.CookiesFile != ""})
-}
-
-func (s *Server) handleGetGlobalCookies(w http.ResponseWriter, r *http.Request) {
-	s.globalCookiesInfo(w, r)
-}
-
-func (s *Server) handlePutGlobalCookies(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Content string `json:"content"`
-	}
-	if err := readJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := validateCookies(req.Content); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := s.store.SetSetting(r.Context(), globalCookiesKey, req.Content); err != nil {
-		s.internalError(w, r, err)
-		return
-	}
-	s.globalCookiesInfo(w, r)
-}
-
-func (s *Server) handleDeleteGlobalCookies(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.SetSetting(r.Context(), globalCookiesKey, ""); err != nil {
-		s.internalError(w, r, err)
-		return
-	}
-	s.globalCookiesInfo(w, r)
-}
-
 func contextBG() context.Context { return context.Background() }

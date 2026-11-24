@@ -3,8 +3,7 @@
 import { t } from '../i18n.js';
 import { h, icon, mount, toast, modal, confirmDialog, field, fmt, copyText } from '../dom.js';
 import { get, post, patch, del } from '../api.js';
-import { state, user } from '../state.js';
-import { cookiesCard } from './settings.js';
+import { user } from '../state.js';
 
 let tab = 'users';
 
@@ -12,11 +11,10 @@ export async function render(root) {
   const pane = h('div', { class: 'vbody' });
   const tabs = h('div', { class: 'tabs', role: 'tablist' });
   const names = ['users', 'invites'];
-  if (state.status.features.cookies) names.push('cookies');
   const show = (name) => {
     tab = name;
     for (const b of tabs.children) b.setAttribute('aria-selected', String(b.dataset.tab === name));
-    ({ users: usersPane, invites: invitesPane, cookies: cookiesPane })[name](pane);
+    ({ users: usersPane, invites: invitesPane })[name](pane);
   };
   for (const n of names) tabs.append(h('button', { type: 'button', role: 'tab', dataset: { tab: n }, onclick: () => show(n) }, t(`admin.tab.${n}`)));
   mount(root, h('div', { class: 'vhead' }, h('h1', null, t('admin.title')), h('span', { class: 'grow' }), tabs), pane);
@@ -137,10 +135,4 @@ async function invitesPane(pane) {
   }
 
   await load();
-}
-
-function cookiesPane(pane) {
-  const card = cookiesCard({ endpoint: '/api/admin/cookies', title: t('admin.globalCookies'), intro: t('admin.globalCookiesIntro') });
-  card.style.flex = '1';
-  mount(pane, card);
 }

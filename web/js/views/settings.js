@@ -4,40 +4,31 @@
 import { t, languages, lang, setLanguage } from '../i18n.js';
 import { h, icon, mount, toast, field, selectEl, segmented } from '../dom.js';
 import { get, put, del } from '../api.js';
-import { state, caps, isIndividual, user, savePrefs } from '../state.js';
+import { state, caps, isIndividual, savePrefs } from '../state.js';
 
-/** YouTube cookies card, reused by the admin view for global cookies. */
-export function cookiesCard({ endpoint, title, intro }) {
+/** Personal YouTube cookies (individual mode only). */
+function cookiesCard() {
+  const endpoint = '/api/cookies';
   const status = h('span', { class: 'tag' }, '…');
-  const fallback = h('p', { class: 'hint', style: { margin: '0' } });
-  const area = h('textarea', { class: 'textarea cookies-text', placeholder: '# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1767225600\tSID\t…', spellcheck: 'false', aria: { label: title } });
+  const area = h('textarea', { class: 'textarea cookies-text', placeholder: '# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1767225600\tSID\t…', spellcheck: 'false', aria: { label: t('cookies.title') } });
   const fileInput = h('input', { type: 'file', accept: '.txt,text/plain', hidden: true, onchange: async () => {
     const f = fileInput.files[0];
     if (f) area.value = await f.text();
     fileInput.value = '';
   } });
-
   const draw = (info) => {
     status.className = ['tag', info.present && 'tag--ok'].filter(Boolean).join(' ');
     status.textContent = info.present ? t('cookies.loaded', { count: info.count, domains: info.domains }) : t('cookies.none');
-    const notes = [];
-    if (info.scope === 'user') notes.push(info.global_present || info.file_configured ? t('cookies.fallbackOn') : t('cookies.fallbackOff'));
-    if (info.file_configured) notes.push(t('cookies.fileOn'));
-    fallback.textContent = notes.join(' · ');
-    fallback.hidden = !notes.length;
   };
-  const card = h('section', { class: 'card' });
-  get(endpoint).then((info) => {
-    if (info.scope === 'server') { mount(card, ...serverCookies(title, info)); return; }
-    draw(info);
-  }).catch((e) => toast(e.message, 'error'));
+  get(endpoint).then(draw).catch((e) => toast(e.message, 'error'));
 
-  mount(card,
-    h('div', { class: 'card__head' }, h('h2', { class: 'card__title grow' }, title), status),
+  return h('section', { class: 'card' },
+    h('div', { class: 'card__head' }, h('h2', { class: 'card__title grow' }, t('cookies.title')), status),
     h('div', { class: 'card__body' },
-      h('p', { class: 'muted', style: { margin: '0' } }, intro),
+      h('p', { class: 'muted', style: { margin: '0' } }, t('cookies.intro')),
       h('ol', { class: 'steps' }, h('li', null, t('cookies.step1')), h('li', null, t('cookies.step2')), h('li', null, t('cookies.step3'))),
-      area, fileInput, fallback),
+      area, fileInput,
+      h('p', { class: 'hint', style: { margin: '0' } }, t('cookies.privacy'))),
     h('div', { class: 'card__foot' },
       h('button', { class: 'btn btn--sm', type: 'button', onclick: () => fileInput.click() }, icon('upload'), t('cookies.upload')),
       h('span', { class: 'grow' }),
@@ -51,22 +42,6 @@ export function cookiesCard({ endpoint, title, intro }) {
           toast(t('cookies.saved'), 'ok');
         } catch (e) { toast(e.message, 'error'); }
       } }, icon('check'), t('common.save'))));
-  return card;
-}
-
-// Shared mode: cookies come only from the server's -cookies-file and are
-// shown read-only — anonymous visitors must not be able to set or replace
-// the account every download runs under.
-function serverCookies(title, info) {
-  return [
-    h('div', { class: 'card__head' }, h('h2', { class: 'card__title grow' }, title),
-      h('span', { class: ['tag', info.present && 'tag--ok'] }, info.present ? t('cookies.loaded', { count: info.count, domains: info.domains }) : t('cookies.none'))),
-    h('div', { class: 'card__body' },
-      h('p', { class: 'muted', style: { margin: '0' } }, t('cookies.sharedIntro')),
-      h('p', { style: { margin: '0' } }, info.file_configured ? t('cookies.sharedFile') : t('cookies.sharedNoFile')),
-      h('pre', { class: 'code', style: { height: 'auto', padding: '10px', whiteSpace: 'pre-wrap' } }, h('span', null, '-cookies-file /etc/videograber/cookies.txt')),
-      h('p', { class: 'hint', style: { margin: '0' } }, t('cookies.sharedWarning'))),
-  ];
 }
 
 function defaultsCard() {
@@ -112,9 +87,7 @@ function aboutCard(span) {
 export async function render(root) {
   const s = state.status;
   const cards = [];
-  if (s.features.cookies) {
-    cards.push(cookiesCard({ endpoint: '/api/cookies', title: t('cookies.title'), intro: t('cookies.introUser') }));
-  }
+  if (s.features.cookies) cards.push(cookiesCard());
   cards.push(defaultsCard());
   cards.push(aboutCard(cards.length % 2 === 0));
   mount(root,

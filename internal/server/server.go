@@ -152,9 +152,6 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("GET /api/admin/invites", s.requireAdmin(s.handleListInvites))
 	api.HandleFunc("POST /api/admin/invites", s.requireAdmin(s.handleCreateInvite))
 	api.HandleFunc("DELETE /api/admin/invites/{id}", s.requireAdmin(s.handleDeleteInvite))
-	api.HandleFunc("GET /api/admin/cookies", s.requireAdmin(s.handleGetGlobalCookies))
-	api.HandleFunc("PUT /api/admin/cookies", s.requireAdmin(s.handlePutGlobalCookies))
-	api.HandleFunc("DELETE /api/admin/cookies", s.requireAdmin(s.handleDeleteGlobalCookies))
 
 	api.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "unknown endpoint")

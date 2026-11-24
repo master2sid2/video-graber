@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -40,7 +39,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Mode: string(s.cfg.Mode), Version: s.version, MaxJobs: s.cfg.MaxJobs,
 		Features: features{
 			YtDlp: s.cfg.YtDlp != "", Browser: s.cfg.Chrome != "", FFprobe: s.cfg.FFprobe != "",
-			History: s.individual(), Cookies: s.cfg.YtDlp != "",
+			History: s.individual(), Cookies: s.cfg.YtDlp != "" && s.individual(),
 		},
 	}
 	if tok, err := s.SetupToken(r.Context()); err == nil && tok != "" {
@@ -320,15 +319,14 @@ func (s *Server) handlePutPrefs(w http.ResponseWriter, r *http.Request) {
 
 // ---------- cookies ----------
 
-const globalCookiesKey = "ytdlp_cookies"
+// legacyGlobalCookiesKey held instance-wide cookies in earlier versions.
+const legacyGlobalCookiesKey = "ytdlp_cookies"
 
+// cookiesInfo describes the caller's cookies without revealing them.
 type cookiesInfo struct {
-	Scope   string `json:"scope"`
-	Present bool   `json:"present"`
-	Count   int    `json:"count"`
-	Domains int    `json:"domains"`
-	Global  bool   `json:"global_present"`
-	File    bool   `json:"file_configured"`
+	Present bool `json:"present"`
+	Count   int  `json:"count"`
+	Domains int  `json:"domains"`
 }
 
 // cookieStats counts cookies without revealing them.
@@ -361,71 +359,48 @@ func validateCookies(content string) error {
 	return nil
 }
 
-// cookiesFor returns the cookies used for a request: the user's own, else
-// the global ones set by an administrator. In shared mode nothing comes from
-// the database: yt-dlp only uses the server's -cookies-file.
+// cookiesFor returns the caller's own cookies. Cookies are strictly
+// personal: nobody downloads with somebody else's account, so there is no
+// global fallback and none at all in shared mode (no accounts there).
 func (s *Server) cookiesFor(r *http.Request) string {
-	if !s.individual() {
+	u := userFrom(r)
+	if u == nil {
 		return ""
 	}
-	if u := userFrom(r); u != nil {
-		if c, err := s.store.UserCookies(r.Context(), u.ID); err == nil && strings.TrimSpace(c) != "" {
-			return c
-		}
-	}
-	c, _ := s.store.GetSetting(r.Context(), globalCookiesKey)
+	c, _ := s.store.UserCookies(r.Context(), u.ID)
 	return c
 }
 
-// fileCookieStats counts the cookies of the -cookies-file (never their values).
-func (s *Server) fileCookieStats() (count, domains int) {
-	if s.cfg.CookiesFile == "" {
-		return 0, 0
+// cookieUser returns the user for cookie endpoints (individual mode only).
+func (s *Server) cookieUser(w http.ResponseWriter, r *http.Request) *store.User {
+	u := userFrom(r)
+	if u == nil {
+		writeError(w, http.StatusNotFound, "cookies are personal and only available in individual mode")
 	}
-	b, err := os.ReadFile(s.cfg.CookiesFile)
-	if err != nil {
-		return 0, 0
-	}
-	return cookieStats(string(b))
+	return u
 }
 
-func (s *Server) cookiesInfo(r *http.Request) (cookiesInfo, error) {
-	if !s.individual() {
-		// Shared mode: read-only view of the server file.
-		info := cookiesInfo{Scope: "server", File: s.cfg.CookiesFile != ""}
-		info.Count, info.Domains = s.fileCookieStats()
-		info.Present = info.Count > 0
-		return info, nil
-	}
-	global, err := s.store.GetSetting(r.Context(), globalCookiesKey)
-	if err != nil {
-		return cookiesInfo{}, err
-	}
-	info := cookiesInfo{Scope: "user", Global: global != "", File: s.cfg.CookiesFile != ""}
-	content, err := s.store.UserCookies(r.Context(), userFrom(r).ID)
-	if err != nil {
-		return info, err
-	}
-	info.Count, info.Domains = cookieStats(content)
-	info.Present = info.Count > 0
-	return info, nil
-}
-
-func (s *Server) handleGetCookies(w http.ResponseWriter, r *http.Request) {
-	info, err := s.cookiesInfo(r)
+func (s *Server) writeCookiesInfo(w http.ResponseWriter, r *http.Request, u *store.User) {
+	content, err := s.store.UserCookies(r.Context(), u.ID)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
+	var info cookiesInfo
+	info.Count, info.Domains = cookieStats(content)
+	info.Present = info.Count > 0
 	writeJSON(w, http.StatusOK, info)
 }
 
-// errSharedCookies is returned when someone tries to change cookies in shared mode.
-const errSharedCookies = "in shared mode cookies can only be configured by the server administrator (-cookies-file)"
+func (s *Server) handleGetCookies(w http.ResponseWriter, r *http.Request) {
+	if u := s.cookieUser(w, r); u != nil {
+		s.writeCookiesInfo(w, r, u)
+	}
+}
 
 func (s *Server) handlePutCookies(w http.ResponseWriter, r *http.Request) {
-	if !s.individual() {
-		writeError(w, http.StatusForbidden, errSharedCookies)
+	u := s.cookieUser(w, r)
+	if u == nil {
 		return
 	}
 	var req struct {
@@ -439,35 +414,32 @@ func (s *Server) handlePutCookies(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.store.SetUserCookies(r.Context(), userFrom(r).ID, req.Content); err != nil {
+	if err := s.store.SetUserCookies(r.Context(), u.ID, req.Content); err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	s.handleGetCookies(w, r)
+	s.writeCookiesInfo(w, r, u)
 }
 
 func (s *Server) handleDeleteCookies(w http.ResponseWriter, r *http.Request) {
-	if !s.individual() {
-		writeError(w, http.StatusForbidden, errSharedCookies)
+	u := s.cookieUser(w, r)
+	if u == nil {
 		return
 	}
-	if err := s.store.SetUserCookies(r.Context(), userFrom(r).ID, ""); err != nil {
+	if err := s.store.SetUserCookies(r.Context(), u.ID, ""); err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	s.handleGetCookies(w, r)
+	s.writeCookiesInfo(w, r, u)
 }
 
-// PurgeSharedCookies removes cookies that earlier versions let anonymous
-// visitors upload in shared mode. They must not be used — nor become the
-// administrators' global cookies after switching to individual mode.
-func (s *Server) PurgeSharedCookies(ctx context.Context) {
-	if s.individual() {
-		return
-	}
-	if c, err := s.store.GetSetting(ctx, globalCookiesKey); err == nil && c != "" {
-		if err := s.store.SetSetting(ctx, globalCookiesKey, ""); err == nil {
-			s.log.Warn("removed YouTube cookies uploaded through the shared-mode UI; configure them with -cookies-file instead")
+// PurgeGlobalCookies deletes instance-wide cookies stored by earlier
+// versions (admin "global cookies" or uploads in shared mode): cookies are
+// personal now and must not be used for everybody's downloads.
+func (s *Server) PurgeGlobalCookies(ctx context.Context) {
+	if c, err := s.store.GetSetting(ctx, legacyGlobalCookiesKey); err == nil && c != "" {
+		if err := s.store.SetSetting(ctx, legacyGlobalCookiesKey, ""); err == nil {
+			s.log.Warn("removed instance-wide YouTube cookies from the database: cookies are personal now (Settings → YouTube cookies)")
 		}
 	}
 }
