@@ -1,13 +1,16 @@
-// Settings: YouTube cookies, default output, password, about.
+// Settings: a 2×2 grid of cards that fills the window
+// (cookies · default output · account · about).
 
 import { t, languages, lang, setLanguage } from '../i18n.js';
 import { h, icon, mount, toast, field, selectEl, segmented } from '../dom.js';
 import { get, put, del } from '../api.js';
 import { state, caps, isIndividual, user, savePrefs } from '../state.js';
 
-export function cookiesPanel({ endpoint, title, intro }) {
-  const status = h('div');
-  const area = h('textarea', { class: 'textarea', placeholder: '# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1767225600\tSID\t…', spellcheck: 'false' });
+/** YouTube cookies card, reused by the admin view for global cookies. */
+export function cookiesCard({ endpoint, title, intro }) {
+  const status = h('span', { class: 'tag' }, '…');
+  const fallback = h('p', { class: 'hint', style: { margin: '0' } });
+  const area = h('textarea', { class: 'textarea cookies-text', placeholder: '# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t1767225600\tSID\t…', spellcheck: 'false', aria: { label: title } });
   const fileInput = h('input', { type: 'file', accept: '.txt,text/plain', hidden: true, onchange: async () => {
     const f = fileInput.files[0];
     if (f) area.value = await f.text();
@@ -15,68 +18,65 @@ export function cookiesPanel({ endpoint, title, intro }) {
   } });
 
   const draw = (info) => {
-    mount(status, h('dl', { class: 'kv' },
-      h('dt', null, t('cookies.status')),
-      h('dd', null, info.present
-        ? h('span', { class: 'tag tag--ok' }, t('cookies.loaded', { count: info.count, domains: info.domains }))
-        : h('span', { class: 'tag' }, t('cookies.none'))),
-      info.scope === 'user' ? [h('dt', null, t('cookies.fallback')), h('dd', null, info.global_present || info.file_configured ? t('cookies.fallbackOn') : t('cookies.fallbackOff'))] : null,
-      info.file_configured ? [h('dt', null, t('cookies.file')), h('dd', null, t('cookies.fileOn'))] : null));
+    status.className = ['tag', info.present && 'tag--ok'].filter(Boolean).join(' ');
+    status.textContent = info.present ? t('cookies.loaded', { count: info.count, domains: info.domains }) : t('cookies.none');
+    const notes = [];
+    if (info.scope === 'user') notes.push(info.global_present || info.file_configured ? t('cookies.fallbackOn') : t('cookies.fallbackOff'));
+    if (info.file_configured) notes.push(t('cookies.fileOn'));
+    fallback.textContent = notes.join(' · ');
+    fallback.hidden = !notes.length;
   };
-  const refresh = () => get(endpoint).then(draw).catch((e) => toast(e.message, 'error'));
+  get(endpoint).then(draw).catch((e) => toast(e.message, 'error'));
 
-  const panel = h('section', { class: 'panel' },
-    h('div', { class: 'panel__head' }, h('h2', { class: 'panel__title' }, title)),
-    h('div', { class: 'panel__body stack' },
-      h('p', { class: 'muted', style: { margin: 0 } }, intro),
-      status,
+  return h('section', { class: 'card' },
+    h('div', { class: 'card__head' }, h('h2', { class: 'card__title grow' }, title), status),
+    h('div', { class: 'card__body' },
+      h('p', { class: 'muted', style: { margin: '0' } }, intro),
       h('ol', { class: 'steps' }, h('li', null, t('cookies.step1')), h('li', null, t('cookies.step2')), h('li', null, t('cookies.step3'))),
-      area, fileInput,
-      h('div', { class: 'row' },
-        h('button', { class: 'btn', type: 'button', onclick: () => fileInput.click() }, icon('upload'), t('cookies.upload')),
-        h('span', { class: 'spacer' }),
-        h('button', { class: 'btn btn--ghost btn--danger', type: 'button', onclick: async () => {
-          try { draw(await del(endpoint)); toast(t('cookies.removed'), 'ok'); } catch (e) { toast(e.message, 'error'); }
-        } }, icon('trash'), t('common.remove')),
-        h('button', { class: 'btn btn--amber', type: 'button', onclick: async () => {
-          try {
-            draw(await put(endpoint, { content: area.value }));
-            area.value = '';
-            toast(t('cookies.saved'), 'ok');
-          } catch (e) { toast(e.message, 'error'); }
-        } }, icon('check'), t('common.save')))));
-  refresh();
-  return panel;
+      area, fileInput, fallback),
+    h('div', { class: 'card__foot' },
+      h('button', { class: 'btn btn--sm', type: 'button', onclick: () => fileInput.click() }, icon('upload'), t('cookies.upload')),
+      h('span', { class: 'grow' }),
+      h('button', { class: 'btn btn--ghost btn--danger btn--sm', type: 'button', onclick: async () => {
+        try { draw(await del(endpoint)); toast(t('cookies.removed'), 'ok'); } catch (e) { toast(e.message, 'error'); }
+      } }, icon('trash'), t('common.remove')),
+      h('button', { class: 'btn btn--sel btn--sm', type: 'button', onclick: async () => {
+        try {
+          draw(await put(endpoint, { content: area.value }));
+          area.value = '';
+          toast(t('cookies.saved'), 'ok');
+        } catch (e) { toast(e.message, 'error'); }
+      } }, icon('check'), t('common.save'))));
 }
 
-function defaultsPanel() {
+function defaultsCard() {
   const p = { ...state.prefs };
   const vid = (caps().containers || []).filter((c) => !c.audio_only);
   const aud = (caps().containers || []).filter((c) => c.audio_only);
-  return h('section', { class: 'panel' },
-    h('div', { class: 'panel__head' }, h('h2', { class: 'panel__title' }, t('settings.defaults'))),
-    h('div', { class: 'panel__body stack' },
-      h('p', { class: 'muted', style: { margin: 0 } }, isIndividual() ? t('settings.defaultsAccount') : t('settings.defaultsBrowser')),
-      h('div', { class: 'grid-2' },
+  return h('section', { class: 'card' },
+    h('div', { class: 'card__head' }, h('h2', { class: 'card__title' }, t('settings.defaults'))),
+    h('div', { class: 'card__body' },
+      h('p', { class: 'muted', style: { margin: '0' } }, isIndividual() ? t('settings.defaultsAccount') : t('settings.defaultsBrowser')),
+      h('div', { class: 'grid2' },
         field(t('grab.container'), selectEl(vid.map((c) => ({ value: c.id, label: c.label })), p.container || 'mp4', (v) => { p.container = v; })),
         field(t('settings.audioContainer'), selectEl(aud.map((c) => ({ value: c.id, label: c.label })), p.audioContainer || 'mp3', (v) => { p.audioContainer = v; }))),
-      h('div', { class: 'grid-2' },
+      h('div', { class: 'grid2' },
         field(t('grab.resolution'), selectEl((caps().heights || [0]).map((x) => ({ value: x, label: x ? `${x}p` : t('grab.original') })), p.height || 0, (v) => { p.height = Number(v); })),
         field(t('grab.audioBitrate'), selectEl([0, 128, 192, 256, 320].map((b) => ({ value: b, label: b ? `${b} kbps` : t('grab.auto') })), p.audioBitrate || 0, (v) => { p.audioBitrate = Number(v); }))),
-      field(t('grab.delivery'), segmented([
+      h('div', null, h('span', { class: 'label' }, t('grab.delivery')), segmented([
         { value: 'stream', label: t('grab.modeStream'), icon: 'bolt' },
         { value: 'file', label: t('grab.modeFile'), icon: 'file' },
-      ], p.mode || 'stream', (v) => { p.mode = v; }, { block: true })),
-      languages.length > 1 ? field(t('settings.language'), selectEl(languages.map((l) => ({ value: l, label: t(`lang.${l}`) })), lang(), (v) => { setLanguage(v); location.reload(); })) : null,
-      h('div', { class: 'row' }, h('span', { class: 'spacer' }),
-        h('button', { class: 'btn btn--amber', onclick: async () => { await savePrefs(p); toast(t('settings.savedDefaults'), 'ok'); } }, icon('check'), t('common.save')))));
+      ], p.mode || 'stream', (v) => { p.mode = v; })),
+      languages.length > 1 ? field(t('settings.language'), selectEl(languages.map((l) => ({ value: l, label: t(`lang.${l}`) })), lang(), (v) => { setLanguage(v); location.reload(); })) : null),
+    h('div', { class: 'card__foot' }, h('span', { class: 'grow' }),
+      h('button', { class: 'btn btn--sel btn--sm', onclick: async () => { await savePrefs(p); toast(t('settings.savedDefaults'), 'ok'); } }, icon('check'), t('common.save'))));
 }
 
-function passwordPanel() {
+function accountCard() {
   const cur = h('input', { class: 'input', type: 'password', autocomplete: 'current-password', required: true });
   const nw = h('input', { class: 'input', type: 'password', autocomplete: 'new-password', required: true, minlength: 8 });
   const nw2 = h('input', { class: 'input', type: 'password', autocomplete: 'new-password', required: true, minlength: 8 });
-  const form = h('form', { class: 'panel__body', onsubmit: async (e) => {
+  const form = h('form', { class: 'card', onsubmit: async (e) => {
     e.preventDefault();
     if (nw.value !== nw2.value) { toast(t('auth.mismatch'), 'error'); return; }
     try {
@@ -85,17 +85,18 @@ function passwordPanel() {
       toast(t('settings.passwordChanged'), 'ok');
     } catch (err) { toast(err.message, 'error'); }
   } },
-  field(t('settings.currentPassword'), cur), field(t('settings.newPassword'), nw), field(t('auth.confirm'), nw2),
-  h('div', { class: 'row', style: { marginTop: '14px' } }, h('span', { class: 'spacer' }), h('button', { class: 'btn btn--amber', type: 'submit' }, t('settings.changePassword'))));
-  return h('section', { class: 'panel' }, h('div', { class: 'panel__head' }, h('h2', { class: 'panel__title' }, t('settings.account'))), form);
+  h('div', { class: 'card__head' }, h('h2', { class: 'card__title grow' }, t('settings.account')), h('span', { class: 'tag' }, user().username)),
+  h('div', { class: 'card__body' }, field(t('settings.currentPassword'), cur), h('div', { class: 'grid2' }, field(t('settings.newPassword'), nw), field(t('auth.confirm'), nw2))),
+  h('div', { class: 'card__foot' }, h('span', { class: 'grow' }), h('button', { class: 'btn btn--sel btn--sm', type: 'submit' }, t('settings.changePassword'))));
+  return form;
 }
 
-function aboutPanel() {
+function aboutCard(span) {
   const s = state.status;
   const yesno = (b) => h('span', { class: ['tag', b && 'tag--ok'] }, b ? t('common.on') : t('common.off'));
-  return h('section', { class: 'panel' },
-    h('div', { class: 'panel__head' }, h('h2', { class: 'panel__title' }, t('settings.about'))),
-    h('div', { class: 'panel__body' }, h('dl', { class: 'kv' },
+  return h('section', { class: 'card', style: span ? { gridColumn: '1 / -1' } : null },
+    h('div', { class: 'card__head' }, h('h2', { class: 'card__title' }, t('settings.about'))),
+    h('div', { class: 'card__body' }, h('dl', { class: 'kv' },
       h('dt', null, t('settings.version')), h('dd', { class: 'mono' }, s.version),
       h('dt', null, t('settings.mode')), h('dd', null, t(`mode.${s.mode}`)),
       h('dt', null, 'ffprobe'), h('dd', null, yesno(s.features.ffprobe)),
@@ -108,14 +109,14 @@ function aboutPanel() {
 
 export async function render(root) {
   const s = state.status;
+  const cards = [];
+  if (s.features.cookies) {
+    cards.push(cookiesCard({ endpoint: '/api/cookies', title: t('cookies.title'), intro: isIndividual() ? t('cookies.introUser') : t('cookies.introShared') }));
+  }
+  cards.push(defaultsCard());
+  if (isIndividual() && user()) cards.push(accountCard());
+  cards.push(aboutCard(cards.length % 2 === 0));
   mount(root,
-    h('div', { class: 'page-head' }, h('h1', { class: 'page-title' }, h('small', null, t('settings.eyebrow')), t('settings.title'))),
-    h('div', { class: 'cols stagger' },
-      s.features.cookies ? cookiesPanel({
-        endpoint: '/api/cookies', title: t('cookies.title'),
-        intro: isIndividual() ? t('cookies.introUser') : t('cookies.introShared'),
-      }) : null,
-      defaultsPanel(),
-      isIndividual() && user() ? passwordPanel() : null,
-      aboutPanel()));
+    h('div', { class: 'vhead' }, h('h1', null, t('settings.title'))),
+    h('div', { class: 'vbody' }, h('div', { class: 'tiles' }, cards)));
 }

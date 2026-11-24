@@ -5,19 +5,17 @@ import { h, mount, field } from '../dom.js';
 import { get, post } from '../api.js';
 import { loadStatus, loadPrefs } from '../state.js';
 
-function shell(root, title, lead, form) {
-  mount(root, h('div', { class: 'auth' }, h('div', { class: 'auth__card stagger' },
-    h('div', { class: 'auth__brand' }, h('span', { class: 'brand__rec' }), h('span', { class: 'brand__word' }, 'Video', h('b', null, 'Graber'))),
-    h('div', { class: 'slate' },
-      h('div', { class: 'slate__clapper', aria: { hidden: 'true' } }),
-      h('div', { class: 'slate__stripe', aria: { hidden: 'true' } }),
-      h('div', { class: 'slate__body' }, h('h1', null, title), h('p', { class: 'lead' }, lead), form)))));
+function shell(root, title, lead, content) {
+  mount(root, h('div', { class: 'auth' }, h('div', { class: 'auth__card' },
+    h('div', { class: 'auth__brand' }, h('span', { class: 'brand' }, h('span', { class: 'brand__rec' }), h('span', { class: 'brand__word' }, 'Video', h('b', null, 'Graber')))),
+    h('div', { class: 'card' }, h('div', { class: 'card__body', style: { padding: '24px' } },
+      h('div', null, h('h1', null, title), h('p', { class: 'lead' }, lead)), content)))));
 }
 
 function authForm({ fields, submitLabel, onSubmit }) {
   const err = h('div', { class: 'form-error', hidden: true, role: 'alert' });
-  const btn = h('button', { class: 'btn btn--rec btn--lg btn--block', type: 'submit' }, submitLabel);
-  const form = h('form', { onsubmit: async (e) => {
+  const btn = h('button', { class: 'btn btn--primary btn--lg btn--block', type: 'submit' }, submitLabel);
+  return h('form', { onsubmit: async (e) => {
     e.preventDefault();
     err.hidden = true;
     btn.disabled = true;
@@ -30,7 +28,6 @@ function authForm({ fields, submitLabel, onSubmit }) {
       btn.disabled = false;
     }
   } }, fields, err, btn);
-  return form;
 }
 
 const input = (attrs) => h('input', { class: 'input', required: true, ...attrs });
@@ -77,12 +74,13 @@ export const login = {
 };
 
 export const register = {
-  async render(root, { params }) {
+  async render(root, { params, isCurrent }) {
     const code = params[0] || '';
     let valid = !!code;
     if (code) {
       try { await get(`/api/invites/${encodeURIComponent(code)}`); } catch { valid = false; }
     }
+    if (!isCurrent()) return;
     if (!valid) {
       shell(root, t('auth.registerTitle'), t('auth.inviteInvalid'), h('a', { class: 'btn btn--block', href: '#/login' }, t('auth.toLogin')));
       return;

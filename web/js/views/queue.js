@@ -1,104 +1,122 @@
-// Queue view: live list of jobs with progress readouts.
+// Queue view: live job list. Rows are long-lived components; progress
+// events only touch text and bar widths, actions are rebuilt only when the
+// job state changes.
 
 import { t } from '../i18n.js';
-import { h, icon, mount, thumb, fmt, toast, download, confirmDialog } from '../dom.js';
+import { h, icon, mount, thumb, toast, download, confirmDialog, segmented } from '../dom.js';
 import { post, del } from '../api.js';
 import { state, subscribe } from '../state.js';
+import { progressBlock, isFinished, isActive } from '../jobview.js';
+
+let filter = 'all';
 
 export async function render(root) {
-  const list = h('div', { class: 'reels' });
+  const list = h('div', { class: 'jobs' });
+  const counts = h('span', { class: 'sub' });
   const clearBtn = h('button', { class: 'btn btn--ghost btn--sm', onclick: clearFinished }, icon('trash'), t('queue.clearFinished'));
-  mount(root,
-    h('div', { class: 'page-head' },
-      h('h1', { class: 'page-title' }, h('small', null, t('queue.eyebrow')), t('queue.title')),
-      clearBtn),
-    list);
+  const filters = segmented([
+    { value: 'all', label: t('queue.all') },
+    { value: 'active', label: t('queue.active') },
+    { value: 'finished', label: t('queue.finished') },
+  ], filter, (v) => { filter = v; draw(); }, { label: t('queue.filter') });
+  filters.style.width = 'auto';
 
-  const nodes = new Map();
-  const draw = () => {
-    const jobs = [...state.jobs.values()].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    clearBtn.hidden = !jobs.some(isFinished);
+  mount(root,
+    h('div', { class: 'vhead' }, h('h1', null, t('queue.title')), counts, h('span', { class: 'grow' }), filters, clearBtn),
+    h('div', { class: 'vbody' }, list));
+
+  const rows = new Map(); // id -> row component
+
+  function draw() {
+    const all = [...state.jobs.values()].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    const active = all.filter((j) => !isFinished(j)).length;
+    counts.textContent = all.length ? t('queue.counts', { active, total: all.length }) : '';
+    clearBtn.hidden = !all.some(isFinished);
+    const jobs = all.filter((j) => filter === 'all' || (filter === 'active' ? !isFinished(j) : isFinished(j)));
+
     if (!jobs.length) {
-      nodes.clear();
-      mount(list, h('div', { class: 'empty' }, icon('queue'), h('h3', null, t('queue.emptyTitle')),
-        h('p', null, t('queue.emptyText')), h('a', { class: 'btn btn--amber', href: '#/grab' }, t('queue.goGrab'))));
+      rows.clear();
+      mount(list, h('div', { class: 'card', style: { flex: '1', minHeight: '260px' } }, h('div', { class: 'state' }, icon('queue'),
+        h('h3', null, all.length ? t('queue.noneInFilter') : t('queue.emptyTitle')),
+        h('p', null, t('queue.emptyText')),
+        all.length ? null : h('a', { class: 'btn btn--sel', href: '#/grab' }, t('queue.goGrab')))));
+      list.style.display = 'flex';
       return;
     }
-    if (list.querySelector('.empty')) list.replaceChildren();
+    list.style.display = '';
+    if (list.querySelector('.state')) list.replaceChildren();
     const seen = new Set();
     jobs.forEach((j, i) => {
       seen.add(j.id);
-      const prev = nodes.get(j.id);
-      let node = prev?.node;
-      // state.js replaces only the job objects that changed: rebuild just those,
-      // so focus and clicks on other reels are not disturbed.
-      if (!prev || prev.job !== j) {
-        const fresh = reel(j);
-        if (node) {
-          fresh.style.animation = 'none'; // only animate newly added reels
-          const hadFocus = node.contains(document.activeElement);
-          node.replaceWith(fresh);
-          if (hadFocus) fresh.querySelector('button')?.focus();
-        }
-        node = fresh;
-        nodes.set(j.id, { node, job: j });
-      }
-      if (list.children[i] !== node) list.insertBefore(node, list.children[i] || null);
+      let row = rows.get(j.id);
+      if (!row) { row = jobRow(j); rows.set(j.id, row); }
+      row.update(j);
+      if (list.children[i] !== row.el) list.insertBefore(row.el, list.children[i] || null);
     });
-    for (const [id, v] of nodes) if (!seen.has(id)) { v.node.remove(); nodes.delete(id); }
-  };
+    for (const [id, row] of rows) if (!seen.has(id)) { row.el.remove(); rows.delete(id); }
+  }
+
   draw();
   return subscribe((kind) => { if (kind === 'jobs') draw(); });
 }
-
-function isFinished(j) { return ['done', 'failed', 'canceled', 'expired'].includes(j.state); }
 
 async function clearFinished() {
   const done = [...state.jobs.values()].filter(isFinished);
   await Promise.allSettled(done.map((j) => del(`/api/jobs/${j.id}`)));
 }
 
-function reel(j) {
-  const p = j.progress || {};
-  const total = p.percent > 0 && p.out_time ? p.out_time / (p.percent / 100) : 0;
-  const active = j.state === 'running' || j.state === 'queued';
-  const indeterminate = j.state === 'running' && !p.percent;
-  const bar = h('div', { class: ['progress', indeterminate && 'progress--indeterminate', (j.state === 'done' || j.state === 'ready') && 'progress--done'] },
-    h('div', { class: 'progress__fill', style: { width: `${j.state === 'done' || j.state === 'ready' ? 100 : (p.percent || 0)}%` } }));
+function jobRow(initial) {
+  const prog = progressBlock();
+  const title = h('div', { class: 'job__title ellipsis' });
+  const sub = h('div', { class: 'job__sub ellipsis' });
+  const hint = h('div', { class: 'hint', hidden: true }, t('queue.pendingHint'));
+  const actions = h('div', { class: 'job__actions' });
+  const el = h('article', { class: 'job' },
+    h('div', { class: 'job__thumb' }, thumb(initial.thumbnail)),
+    h('div', { style: { minWidth: '0' } }, title, sub, hint),
+    h('div', { class: 'job__prog' }, prog.el),
+    actions);
+  let lastState = null;
+  let lastJob = null;
 
-  const actions = [];
-  if (j.state === 'ready') {
-    actions.push(h('button', { class: 'btn btn--amber btn--sm', onclick: () => download(`/api/jobs/${j.id}/download`) }, icon('grab'), t('queue.save')));
-  }
-  if (j.mode === 'stream' && ['pending', 'failed', 'canceled', 'done'].includes(j.state)) {
-    actions.push(h('button', { class: 'btn btn--sm', title: t('queue.restartHint'), onclick: () => download(`/api/jobs/${j.id}/download`) },
-      icon(j.state === 'pending' ? 'play' : 'refresh'), j.state === 'pending' ? t('queue.start') : t('queue.again')));
-  }
-  if (active) {
-    actions.push(h('button', { class: 'btn btn--sm btn--danger', onclick: () => post(`/api/jobs/${j.id}/cancel`).catch((e) => toast(e.message, 'error')) }, icon('stop'), t('queue.cancel')));
-  }
-  actions.push(h('button', {
-    class: 'btn btn--ghost btn--icon', title: t('queue.remove'), aria: { label: t('queue.remove') },
-    onclick: async () => {
-      if (active && !(await confirmDialog(t('queue.removeActive')))) return;
-      del(`/api/jobs/${j.id}`).catch((e) => toast(e.message, 'error'));
+  const buildActions = (j) => {
+    const list = [];
+    if (j.state === 'ready') {
+      list.push(h('button', { class: 'btn btn--sel btn--sm', onclick: () => download(`/api/jobs/${j.id}/download`) }, icon('grab'), t('queue.save')));
+    }
+    if (j.mode === 'stream' && ['pending', 'failed', 'canceled', 'done'].includes(j.state)) {
+      list.push(h('button', { class: 'btn btn--sm', title: t('queue.restartHint'), onclick: () => download(`/api/jobs/${j.id}/download`) },
+        icon(j.state === 'pending' ? 'play' : 'refresh'), j.state === 'pending' ? t('queue.start') : t('queue.again')));
+    }
+    if (isActive(j) && j.state !== 'pending') {
+      list.push(h('button', { class: 'btn btn--sm btn--danger', onclick: () => post(`/api/jobs/${j.id}/cancel`).catch((e) => toast(e.message, 'error')) }, icon('stop'), t('queue.cancel')));
+    }
+    list.push(h('button', {
+      class: 'btn btn--ghost btn--icon btn--sm', title: t('queue.remove'), aria: { label: t('queue.remove') },
+      onclick: async () => {
+        const cur = state.jobs.get(j.id) || j;
+        if (cur.state === 'running' && !(await confirmDialog(t('queue.removeActive')))) return;
+        del(`/api/jobs/${j.id}`).catch((e) => toast(e.message, 'error'));
+      },
+    }, icon('x')));
+    mount(actions, list);
+  };
+
+  return {
+    el,
+    update(j) {
+      if (j === lastJob) return;
+      lastJob = j;
+      title.textContent = j.title || j.filename;
+      title.title = j.title || '';
+      sub.textContent = j.subtitle ? `${j.subtitle} · ${j.filename}` : j.filename;
+      sub.title = j.filename;
+      hint.hidden = j.state !== 'pending';
+      prog.update(j);
+      if (j.state !== lastState) {
+        lastState = j.state;
+        buildActions(j);
+      }
     },
-  }, icon('x')));
-
-  const out = j.output || {};
-  return h('article', { class: 'reel', dataset: { id: j.id } },
-    h('div', { class: 'reel__thumb' }, thumb(j.thumbnail)),
-    h('div', { style: { minWidth: '0' } },
-      h('h3', { class: 'reel__title', title: j.title }, j.title || j.filename),
-      h('div', { class: 'reel__sub', title: j.filename }, j.subtitle ? `${j.subtitle} — ${j.filename}` : j.filename),
-      bar,
-      h('div', { class: 'reel__info' },
-        h('span', { class: `led led--${j.state}` }, t(`state.${j.state}`)),
-        h('span', null, h('b', null, fmt.duration(p.out_time)), ' / ', total ? fmt.duration(total) : '--:--'),
-        p.speed ? h('span', null, t('queue.speed'), ' ', h('b', null, `${p.speed.toFixed(1)}×`)) : null,
-        h('span', null, h('b', null, fmt.bytes(j.size || p.size))),
-        h('span', null, String(out.container || '').toUpperCase(), out.height ? ` · ${out.height}p` : '', ' · ', t(`grab.mode${j.mode === 'file' ? 'File' : 'Stream'}`))),
-      j.error ? h('div', { class: 'reel__err' }, j.error) : null,
-      j.state === 'pending' ? h('div', { class: 'hint', style: { marginTop: '6px' } }, t('queue.pendingHint')) : null),
-    h('div', { class: 'reel__actions' }, actions));
+  };
 }

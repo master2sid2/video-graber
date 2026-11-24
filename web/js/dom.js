@@ -89,10 +89,24 @@ export function icon(name, cls = '') {
 
 /** An <img> that degrades gracefully and never leaks the page referrer. */
 export function thumb(src, alt = '') {
-  if (!src) return h('div', { class: 'poster__ph' }, icon('film'));
+  if (!src) return icon('film');
   const img = h('img', { src, alt, loading: 'lazy', referrerpolicy: 'no-referrer', decoding: 'async' });
-  img.addEventListener('error', () => img.replaceWith(h('div', { class: 'poster__ph' }, icon('film'))), { once: true });
+  img.addEventListener('error', () => img.replaceWith(icon('film')), { once: true });
   return img;
+}
+
+/**
+ * Run fn (which re-renders part of the DOM) while preserving the scroll
+ * position of el and of its scrollable descendants marked with data-keep.
+ */
+export function keepScroll(el, fn) {
+  const saved = [[el, el.scrollTop]];
+  el.querySelectorAll('[data-keep]').forEach((x) => saved.push([x.dataset.keep, x.scrollTop]));
+  fn();
+  for (const [k, top] of saved) {
+    const target = typeof k === 'string' ? el.querySelector(`[data-keep="${k}"]`) : k;
+    if (target) target.scrollTop = top;
+  }
 }
 
 // ── Toasts ─────────────────────────────────────────────────────────────────
@@ -111,26 +125,34 @@ export function toast(message, kind = 'info', ms = 4200) {
  * Open a modal dialog. `actions` is a list of {label, kind, value, submit}.
  * Resolves with the value of the clicked action (or null when dismissed).
  * `onSubmit(value)` may return false to keep the dialog open.
+ * Returns {promise, close, root} when `handle` is true.
  */
-export function modal({ title, body, actions = [], onSubmit }) {
-  return new Promise((resolve) => {
+export function modal({ title, body, actions = [], onSubmit, wide = false, handle = false }) {
+  let close;
+  const promise = new Promise((resolve) => {
     const prev = document.activeElement;
-    const close = (v) => {
+    close = (v) => {
+      if (!backdrop.isConnected) return;
       backdrop.remove();
       document.removeEventListener('keydown', onKey);
       prev?.focus?.();
       resolve(v);
     };
     const onKey = (e) => { if (e.key === 'Escape') close(null); };
-    const form = h('form', { class: 'panel modal', role: 'dialog', aria: { modal: 'true', label: title } },
-      h('div', { class: 'panel__head' }, h('h2', { class: 'panel__title' }, title),
-        h('button', { type: 'button', class: 'btn btn--ghost btn--icon', aria: { label: t('common.close') }, onclick: () => close(null) }, icon('x'))),
-      h('div', { class: 'panel__body' }, body),
-      actions.length ? h('div', { class: 'modal__foot' }, actions.map((a) =>
-        h('button', {
-          type: a.submit ? 'submit' : 'button', class: ['btn', a.kind && `btn--${a.kind}`],
-          onclick: a.submit ? null : () => close(a.value ?? null),
-        }, a.label))) : null);
+    const foot = h('div', { class: 'card__foot' });
+    const renderActions = (list) => mount(foot, list.map((a) => h('button', {
+      type: a.submit ? 'submit' : 'button', class: ['btn', a.kind && `btn--${a.kind}`],
+      onclick: a.submit ? null : () => (a.onclick ? a.onclick() : close(a.value ?? null)),
+    }, a.icon ? icon(a.icon) : null, a.label)));
+    renderActions(actions);
+    const form = h('form', { class: ['card', 'modal', wide && 'modal--wide'], role: 'dialog', aria: { modal: 'true', label: title } },
+      h('div', { class: 'card__head' }, h('h2', { class: 'card__title grow ellipsis' }, title),
+        h('button', { type: 'button', class: 'btn btn--ghost btn--icon btn--sm', aria: { label: t('common.close') }, onclick: () => close(null) }, icon('x'))),
+      h('div', { class: 'card__body' }, body),
+      foot);
+    foot.hidden = !actions.length;
+    form.setActions = (list) => { renderActions(list); foot.hidden = !list.length; };
+    form.setTitle = (text) => { form.querySelector('.card__title').textContent = text; };
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const submitAction = actions.find((a) => a.submit);
@@ -149,8 +171,10 @@ export function modal({ title, body, actions = [], onSubmit }) {
     const backdrop = h('div', { class: 'modal-backdrop', onmousedown: (e) => { if (e.target === backdrop) close(null); } }, form);
     document.body.append(backdrop);
     document.addEventListener('keydown', onKey);
-    (form.querySelector('input, select, textarea') || form.querySelector('[type=submit]'))?.focus();
+    (form.querySelector('.card__body input, .card__body select, .card__body textarea') || form.querySelector('[type=submit]') || form.querySelector('.card__foot button'))?.focus();
+    close.root = form;
   });
+  return handle ? { promise, close, root: close.root } : promise;
 }
 
 export async function confirmDialog(text, { okLabel, danger = true } = {}) {
@@ -159,7 +183,7 @@ export async function confirmDialog(text, { okLabel, danger = true } = {}) {
     body: h('p', null, text),
     actions: [
       { label: t('common.cancel'), kind: 'ghost', value: false },
-      { label: okLabel || t('common.ok'), kind: danger ? 'rec' : 'amber', value: true, submit: true },
+      { label: okLabel || t('common.ok'), kind: danger ? 'primary' : 'sel', value: true, submit: true },
     ],
   });
   return v === true;
@@ -238,5 +262,5 @@ export function selectEl(options, value, onChange, attrs = {}) {
 }
 
 export function field(label, control, hint) {
-  return h('label', { class: 'field' }, h('span', { class: 'label' }, label), control, hint ? h('span', { class: 'hint' }, hint) : null);
+  return h('label', { class: 'field' }, h('span', { class: 'label' }, label), control, hint ? h('p', { class: 'hint' }, hint) : null);
 }

@@ -1,4 +1,4 @@
-// Entry point: routing, navigation and global chrome.
+// Entry point: routing, navigation and the application shell.
 
 import { t } from './i18n.js';
 import { h, icon, mount, toast } from './dom.js';
@@ -22,6 +22,8 @@ const routes = {
   register: { view: authViews.register, public: true },
 };
 
+const appEl = document.getElementById('app');
+const sideEl = document.getElementById('sidebar');
 const viewEl = document.getElementById('view');
 let cleanup = null;
 let current = '';
@@ -48,24 +50,39 @@ function allowed(name) {
 }
 
 function renderNav(active) {
-  const nav = document.getElementById('nav');
-  const links = Object.entries(routes)
+  const n = activeCount();
+  mount(document.getElementById('nav'), Object.entries(routes)
     .filter(([name, r]) => r.nav && allowed(name))
-    .map(([name, r]) => {
-      const badge = name === 'queue' && activeCount() ? h('span', { class: 'badge' }, String(activeCount())) : null;
-      return h('a', { href: `#/${name}`, aria: active === name ? { current: 'page' } : null }, icon(r.icon), h('span', null, t(r.nav)), badge);
-    });
-  mount(nav, links);
+    .map(([name, r]) => h('a', { href: `#/${name}`, title: t(r.nav), aria: active === name ? { current: 'page' } : null },
+      icon(r.icon), h('span', null, t(r.nav)),
+      name === 'queue' && n ? h('span', { class: 'badge' }, String(n)) : null)));
 
-  const acc = document.getElementById('account');
   const u = user();
-  if (u) {
-    mount(acc, h('div', { class: 'account' },
-      h('span', null, t('account.signedInAs')), h('span', { class: 'account__name' }, u.username),
-      h('button', { class: 'btn btn--ghost btn--icon', title: t('account.logout'), aria: { label: t('account.logout') }, onclick: logout }, icon('logout'))));
-  } else {
-    mount(acc, isIndividual() ? null : h('span', { class: 'eyebrow' }, t('account.sharedMode')));
-  }
+  mount(document.getElementById('account'), h('div', { class: 'account' },
+    h('span', { class: 'avatar', aria: { hidden: 'true' } }, u ? u.username.slice(0, 2).toUpperCase() : '··'),
+    h('div', { class: 'account__info grow' },
+      h('div', { class: 'account__name ellipsis' }, u ? u.username : t('account.guest')),
+      h('div', { class: 'account__role' }, u ? (u.is_admin ? t('account.admin') : t('account.member')) : t('account.sharedMode'))),
+    u ? h('button', { class: 'btn btn--ghost btn--icon btn--sm', title: t('account.logout'), aria: { label: t('account.logout') }, onclick: logout }, icon('logout')) : null));
+  renderActivity();
+}
+
+// Small "now recording" widget in the sidebar.
+function renderActivity() {
+  const box = document.getElementById('activity');
+  const jobs = [...state.jobs.values()];
+  const running = jobs.filter((j) => j.state === 'running');
+  const waiting = jobs.filter((j) => j.state === 'queued' || j.state === 'pending').length;
+  const ready = jobs.filter((j) => j.state === 'ready').length;
+  if (!running.length && !waiting && !ready) { box.replaceChildren(); return; }
+  const j = running[0];
+  const pct = j?.progress?.percent || 0;
+  mount(box, h('a', { class: 'activity', href: '#/queue' },
+    h('div', { class: 'activity__row' },
+      h('span', { class: `led led--${j ? 'running' : ready ? 'ready' : 'queued'}` },
+        j ? t('activity.running', { count: running.length }) : ready ? t('activity.ready', { count: ready }) : t('activity.waiting', { count: waiting }))),
+    j ? h('div', { class: 'ellipsis small' }, j.subtitle || j.title) : null,
+    j ? h('div', { class: ['bar', !pct && 'bar--busy'] }, h('div', { class: 'bar__fill', style: { width: `${pct}%` } })) : null));
 }
 
 async function logout() {
@@ -86,12 +103,11 @@ async function render() {
   } else if (routes[target]?.public || !allowed(target)) {
     target = 'grab';
   }
-  if (target !== (name || 'grab')) {
-    history.replaceState(null, '', `#/${target}`);
-  }
+  if (target !== (name || 'grab')) history.replaceState(null, '', `#/${target}`);
 
   const r = routes[target];
-  document.getElementById('topbar').hidden = !!r.public;
+  sideEl.hidden = !!r.public;
+  appEl.classList.toggle('is-bare', !!r.public);
   if (!r.public) {
     connectEvents();
     renderNav(target);
@@ -99,17 +115,16 @@ async function render() {
   if (cleanup) { try { cleanup(); } catch { /* ignore */ } cleanup = null; }
   current = target;
   const seq = ++renderSeq;
-  // Async views render into their own container, attached only if they are
-  // still the current route when they finish.
-  const container = h('div');
-  viewEl.replaceChildren(container);
+  viewEl.replaceChildren();
   document.title = r.nav ? `${t(r.nav)} · VideoGraber` : 'VideoGraber';
   let c = null;
   try {
-    c = (await r.view.render(container, { params, query, navigate, refresh: boot })) || null;
+    c = (await r.view.render(viewEl, { params, query, navigate, isCurrent: () => seq === renderSeq })) || null;
   } catch (err) {
     console.error(err);
-    mount(container, h('div', { class: 'error-card' }, h('h3', null, t('common.error')), h('p', null, err.message)));
+    if (seq === renderSeq) {
+      mount(viewEl, h('div', { class: 'state state--error' }, icon('x'), h('h3', null, t('common.error')), h('p', null, err.message)));
+    }
   }
   if (seq !== renderSeq) {
     if (c) { try { c(); } catch { /* ignore */ } }
@@ -119,23 +134,11 @@ async function render() {
   if (!viewEl.contains(document.activeElement)) viewEl.focus({ preventScroll: true });
 }
 
-// Running SMPTE-style clock in the header — purely decorative.
-function startTimecode() {
-  const el = document.getElementById('timecode');
-  const p = (x) => String(x).padStart(2, '0');
-  const tick = () => {
-    const d = new Date();
-    el.textContent = `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}:${p(Math.floor(d.getMilliseconds() / 40))}`;
-  };
-  tick();
-  setInterval(tick, 40);
-}
-
 async function boot() {
   try {
     await loadStatus();
   } catch (err) {
-    mount(viewEl, h('div', { class: 'error-card' }, h('h3', null, t('common.serverDown')), h('p', null, err.message)));
+    mount(viewEl, h('div', { class: 'state state--error' }, icon('x'), h('h3', null, t('common.serverDown')), h('p', null, err.message)));
     return;
   }
   await loadPrefs();
@@ -159,9 +162,10 @@ subscribe((kind) => {
   if (n !== lastActive) {
     lastActive = n;
     renderNav(current);
+  } else {
+    renderActivity();
   }
 });
 
 window.addEventListener('hashchange', render);
-startTimecode();
 boot();
