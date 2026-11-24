@@ -1,0 +1,6 @@
+/videograber
+/data/
+/logs/
+*.db
+*.db-wal
+*.db-shm

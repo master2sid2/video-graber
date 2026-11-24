@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0d0d0c">
+  <title>VideoGraber</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/fonts/fonts.css">
+  <link rel="stylesheet" href="/css/app.css">
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+  <header class="topbar" id="topbar" hidden>
+    <a class="brand" href="#/grab" aria-label="VideoGraber home">
+      <span class="brand__rec" aria-hidden="true"></span>
+      <span class="brand__word">Video<b>Graber</b></span>
+    </a>
+    <nav class="nav" id="nav" aria-label="Main"></nav>
+    <div class="topbar__right">
+      <span class="timecode" id="timecode" aria-hidden="true">00:00:00:00</span>
+      <div id="account"></div>
+    </div>
+  </header>
+  <main id="view" class="view" tabindex="-1"></main>
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+  <noscript><p class="noscript">VideoGraber needs JavaScript enabled.</p></noscript>
+</body>
+</html>
