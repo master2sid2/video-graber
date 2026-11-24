@@ -20,6 +20,9 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
+
+	"golang.org/x/net/html/charset"
 )
 
 // MaxBody is the maximum size of a fetched page/playlist.
@@ -161,7 +164,7 @@ func (c *Client) Do(ctx context.Context, method, rawURL string, headers map[stri
 	if err != nil {
 		return nil, err
 	}
-	r := &Response{URL: resp.Request.URL.String(), Status: resp.StatusCode, ContentType: resp.Header.Get("Content-Type"), Body: data}
+	r := &Response{URL: resp.Request.URL.String(), Status: resp.StatusCode, ContentType: resp.Header.Get("Content-Type"), Body: decodeText(data, resp.Header.Get("Content-Type"))}
 	if resp.StatusCode >= 400 {
 		return r, fmt.Errorf("GET %s: HTTP %d", shortURL(rawURL), resp.StatusCode)
 	}
@@ -185,4 +188,27 @@ func shortURL(s string) string {
 		return s[:117] + "..."
 	}
 	return s
+}
+
+// decodeText converts HTML/XML/text documents in legacy encodings (e.g.
+// windows-1251, koi8-r) to UTF-8, using the Content-Type header, a BOM or
+// the <meta charset> declaration.
+func decodeText(data []byte, contentType string) []byte {
+	ct := strings.ToLower(contentType)
+	if ct != "" && !strings.Contains(ct, "html") && !strings.Contains(ct, "xml") && !strings.HasPrefix(ct, "text/") {
+		return data
+	}
+	enc, name, certain := charset.DetermineEncoding(data, contentType)
+	if name == "utf-8" || enc == nil {
+		return data
+	}
+	// Undeclared documents default to windows-1252; keep valid UTF-8 as is.
+	if !certain && utf8.Valid(data) {
+		return data
+	}
+	out, err := enc.NewDecoder().Bytes(data)
+	if err != nil {
+		return data
+	}
+	return out
 }

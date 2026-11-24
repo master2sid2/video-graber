@@ -40,6 +40,7 @@ type found struct {
 	headers  Headers
 	subs     []Track
 	delegate *Result
+	modules  []string // analysis modules involved
 }
 
 const maxIframeDepth = 3
@@ -120,16 +121,30 @@ func (g *Generic) Extract(ctx context.Context, pageURL string, opts Options) (*R
 	}
 
 	hasOwnPlayer := len(p.Candidates) > 0 || len(p.Iframes) > 0 || len(p.Players) > 0 || p.Playlist != nil
+
+	// When the page links to episodes but is not one of them, while its own
+	// player carries a complete episode list, the player's list wins.
+	var pre *found
+	if len(media.Episodes) > 0 && media.Selected.Episode == "" && hasOwnPlayer && len(media.Translations) == 0 {
+		if f, err := g.findOnPage(ctx, p, 0); err == nil && playerHasEpisodes(f) {
+			pre = f
+			media.Episodes, epURL = nil, map[string]string{}
+		}
+	}
 	if len(media.Episodes) > 0 && media.Selected.Episode == "" && !hasOwnPlayer {
 		media.Selected.Episode = media.Episodes[0].ID
 	}
 
 	// No page level choices: inherit them from what the player provides.
 	if len(media.Episodes) == 0 && len(media.Translations) == 0 {
-		f, err := g.findOnPage(ctx, p, 0)
-		if err != nil {
-			return nil, err
+		f := pre
+		if f == nil {
+			var err error
+			if f, err = g.findOnPage(ctx, p, 0); err != nil {
+				return nil, err
+			}
 		}
+		media.Modules = mergeNames(p.Modules, f.modules)
 		switch {
 		case f.delegate != nil:
 			d := f.delegate
@@ -152,6 +167,7 @@ func (g *Generic) Extract(ctx context.Context, pageURL string, opts Options) (*R
 			return &Result{Media: media, Resolve: resolve, Stream: st}, nil
 		default:
 			st := f.stream
+			st.via = mergeNames(st.via, f.modules)
 			if st.Duration == 0 {
 				st.Duration = media.Duration
 			}
@@ -200,6 +216,7 @@ func (g *Generic) Extract(ctx context.Context, pageURL string, opts Options) (*R
 	if err != nil {
 		return nil, err
 	}
+	media.Modules = mergeNames(p.Modules, st.via)
 	if st.Duration == 0 {
 		st.Duration = media.Duration
 	}
@@ -299,11 +316,11 @@ func (g *Generic) findOnPage(ctx context.Context, p *page, depth int) (*found, e
 	base, _ := url.Parse(p.URL)
 
 	if p.Playlist != nil {
-		f := &found{tree: p.Playlist, treeBase: base, headers: headers, subs: p.Subtitles}
+		f := &found{tree: p.Playlist, treeBase: base, headers: headers, subs: p.Subtitles, modules: mergeNames(p.Modules, []string{p.Playlist.Via})}
 		if len(p.Playlist.Leaves) == 1 {
 			st, err := g.streamFromFound(ctx, f, Selection{})
 			if err == nil {
-				return &found{stream: st}, nil
+				return &found{stream: st, modules: f.modules}, nil
 			}
 			g.Log.Debug("playerjs source failed", "url", p.URL, "err", err)
 		} else {
@@ -313,7 +330,7 @@ func (g *Generic) findOnPage(ctx context.Context, p *page, depth int) (*found, e
 	if len(p.Candidates) > 0 {
 		st, err := g.streamFromCandidates(ctx, p.Candidates, headers, p.Subtitles)
 		if err == nil {
-			return &found{stream: st}, nil
+			return &found{stream: st, modules: mergeNames(p.Modules, []string{p.Candidates[0].Via})}, nil
 		}
 		g.Log.Debug("page candidates failed", "url", p.URL, "err", err)
 	}
@@ -322,7 +339,24 @@ func (g *Generic) findOnPage(ctx context.Context, p *page, depth int) (*found, e
 	if len(frames) == 0 && len(p.Players) > 0 {
 		frames = append(frames, pickPlayer(p.Players, "").URL)
 	}
+	// Several embedded players: try them all (up to 4) and keep the one with
+	// the longest episode list; the first one wins ties.
 	var errs []error
+	var best *found
+	bestEps := -1
+	consider := func(f *found) {
+		n := 0
+		switch {
+		case f.tree != nil:
+			_, eps, _ := f.tree.choices()
+			n = len(eps)
+		case f.delegate != nil:
+			n = len(f.delegate.Media.Episodes)
+		}
+		if n > bestEps {
+			best, bestEps = f, n
+		}
+	}
 	for i, fr := range frames {
 		if i >= 4 || ctx.Err() != nil {
 			break
@@ -335,7 +369,8 @@ func (g *Generic) findOnPage(ctx context.Context, p *page, depth int) (*found, e
 			if ext := g.Specific(u); ext != nil {
 				res, err := ext.Extract(ctx, fr, Options{Referer: p.URL})
 				if err == nil {
-					return &found{delegate: res}, nil
+					consider(&found{delegate: res, modules: mergeNames(p.Modules, []string{ext.Name()})})
+					continue
 				}
 				errs = append(errs, fmt.Errorf("%s: %w", ext.Name(), err))
 				continue
@@ -346,7 +381,7 @@ func (g *Generic) findOnPage(ctx context.Context, p *page, depth int) (*found, e
 		}
 		if isDirectMedia(fr) {
 			if st, err := g.streamFromCandidates(ctx, []candidate{{URL: fr, Proto: protoFor(fr)}}, headers, nil); err == nil {
-				return &found{stream: st}, nil
+				consider(&found{stream: st, modules: mergeNames(p.Modules)})
 			}
 			continue
 		}
@@ -356,10 +391,14 @@ func (g *Generic) findOnPage(ctx context.Context, p *page, depth int) (*found, e
 			continue
 		}
 		if f, err := g.findOnPage(ctx, sub, depth+1); err == nil {
-			return f, nil
+			f.modules = mergeNames(p.Modules, f.modules)
+			consider(f)
 		} else {
 			errs = append(errs, err)
 		}
+	}
+	if best != nil {
+		return best, nil
 	}
 
 	if g.Browser != nil && depth == 0 {
@@ -368,7 +407,7 @@ func (g *Generic) findOnPage(ctx context.Context, p *page, depth int) (*found, e
 		if err == nil && len(cands) > 0 {
 			st, err := g.streamFromCandidates(ctx, cands, hdr, p.Subtitles)
 			if err == nil {
-				return &found{stream: st}, nil
+				return &found{stream: st, modules: mergeNames(p.Modules, []string{"browser"})}, nil
 			}
 			errs = append(errs, err)
 		} else if err != nil {
@@ -377,12 +416,20 @@ func (g *Generic) findOnPage(ctx context.Context, p *page, depth int) (*found, e
 	}
 
 	if p.Encrypted {
-		errs = append(errs, errors.New("the player configuration is obfuscated; configure -chrome to enable headless extraction"))
+		errs = append(errs, errors.New("the player configuration is obfuscated; the headless browser (-chrome) may handle it"))
 	}
 	return nil, errors.Join(append([]error{ErrNoMedia}, errs...)...)
 }
 
 func (g *Generic) streamFromFound(ctx context.Context, f *found, sel Selection) (*Stream, error) {
+	st, err := g.streamFromFound1(ctx, f, sel)
+	if err == nil && st != nil {
+		st.via = mergeNames(st.via, f.modules)
+	}
+	return st, err
+}
+
+func (g *Generic) streamFromFound1(ctx context.Context, f *found, sel Selection) (*Stream, error) {
 	switch {
 	case f.stream != nil:
 		return f.stream, nil
@@ -424,13 +471,25 @@ func (g *Generic) direct(ctx context.Context, rawURL, referer string) (*Result, 
 	if title == "index" || title == "master" || title == "playlist" {
 		title = path.Base(path.Dir(u.Path))
 	}
-	media := &Media{PageURL: rawURL, Title: title, Extractor: "direct", Duration: st.Duration}
+	media := &Media{PageURL: rawURL, Title: title, Extractor: "direct", Duration: st.Duration, Modules: []string{"direct-link"}}
 	return &Result{Media: media, Stream: st, Resolve: func(context.Context, Selection) (*Stream, error) { return st, nil }}, nil
 }
 
 // streamFromCandidates turns a set of media URLs into a Stream.
 func (g *Generic) streamFromCandidates(ctx context.Context, cands []candidate, headers Headers, subs []Track) (*Stream, error) {
+	if len(cands) > 1 && labeledSet(cands) {
+		return g.streamFromQualityList(ctx, cands, headers, subs)
+	}
 	var hls, dash, files []candidate
+	sniffed := 0
+	for i := range cands {
+		c := &cands[i]
+		// Playlists served by scripts (playlist.php?…) carry no extension.
+		if c.Proto == ProtoHTTP && !hasMediaExt(c.URL) && sniffed < 4 {
+			sniffed++
+			c.Proto = g.sniff(ctx, c.URL, headers)
+		}
+	}
 	for _, c := range cands {
 		switch c.Proto {
 		case ProtoHLS:
@@ -521,4 +580,85 @@ func labeledSet(c []candidate) bool {
 		}
 	}
 	return true
+}
+
+// sniff fetches a URL without a known media extension and decides by its
+// content whether it is an HLS playlist, a DASH manifest or a plain file.
+func (g *Generic) sniff(ctx context.Context, rawURL string, headers Headers) Protocol {
+	resp, err := g.Client.Get(ctx, rawURL, headers)
+	if err != nil || resp.Body == nil {
+		g.Log.Debug("sniff failed", "url", rawURL, "err", err)
+		return ProtoHTTP
+	}
+	head := strings.TrimSpace(string(resp.Body[:min(len(resp.Body), 512)]))
+	head = strings.TrimPrefix(head, "\ufeff")
+	switch {
+	case strings.HasPrefix(head, "#EXTM3U") || strings.Contains(resp.ContentType, "mpegurl"):
+		return ProtoHLS
+	case strings.Contains(head, "<MPD") || strings.Contains(resp.ContentType, "dash+xml"):
+		return ProtoDASH
+	}
+	return ProtoHTTP
+}
+
+// playerHasEpisodes reports whether a found player offers several episodes.
+func playerHasEpisodes(f *found) bool {
+	switch {
+	case f.tree != nil:
+		_, eps, _ := f.tree.choices()
+		return len(eps) > 1
+	case f.delegate != nil:
+		return len(f.delegate.Media.Episodes) > 1
+	}
+	return false
+}
+
+// streamFromQualityList handles an explicit list of labelled qualities
+// ([360p]a,[720p]b): every entry becomes one format. Entries may use
+// different protocols, and "720.mp4" may well be an HLS playlist, so entries
+// are sniffed when the list mixes protocols.
+func (g *Generic) streamFromQualityList(ctx context.Context, cands []candidate, headers Headers, subs []Track) (*Stream, error) {
+	mixed := slices.ContainsFunc(cands, func(c candidate) bool { return c.Proto != cands[0].Proto })
+	st := &Stream{}
+	var errs []error
+	for _, c := range cands {
+		if c.Proto == ProtoHTTP && (mixed || !hasMediaExt(c.URL)) {
+			c.Proto = g.sniff(ctx, c.URL, headers)
+		}
+		height := cmp.Or(c.Height, heightFrom(c.Label))
+		switch c.Proto {
+		case ProtoHLS:
+			s, err := hlsStream(ctx, g.Client, c.URL, headers, c.Label)
+			if err != nil || len(s.Formats) == 0 {
+				errs = append(errs, err)
+				continue
+			}
+			f := s.Formats[0]
+			f.Label = cmp.Or(c.Label, f.Label)
+			f.Height = cmp.Or(f.Height, height)
+			st.Formats = append(st.Formats, f)
+			st.Duration = max(st.Duration, s.Duration)
+			if len(st.Audio) == 0 {
+				st.Audio = s.Audio
+			}
+		case ProtoDASH:
+			st.Formats = append(st.Formats, Format{Label: c.Label, Height: height, Protocol: ProtoDASH, URL: c.URL, Headers: headers, HasVideo: true, HasAudio: true})
+		default:
+			st.Formats = append(st.Formats, Format{Label: c.Label, Height: height, Protocol: ProtoHTTP, URL: c.URL, Headers: headers, HasVideo: true, HasAudio: true,
+				Ext: strings.TrimPrefix(strings.ToLower(path.Ext(strings.SplitN(c.URL, "?", 2)[0])), ".")})
+		}
+	}
+	if len(st.Formats) == 0 {
+		return nil, errors.Join(append([]error{ErrNoMedia}, errs...)...)
+	}
+	sortFormats(st.Formats)
+	assignFormatIDs(st.Formats, "q")
+	for _, s := range subs {
+		if s.URL != "" {
+			s.ID = fmt.Sprintf("x%d", len(st.Subtitles))
+			s.Headers = headers
+			st.Subtitles = append(st.Subtitles, s)
+		}
+	}
+	return st, nil
 }

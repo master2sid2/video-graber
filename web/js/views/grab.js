@@ -3,7 +3,7 @@
 // update the affected nodes in place so lists never jump back to the top.
 
 import { t } from '../i18n.js';
-import { h, icon, mount, toast, thumb, fmt, segmented, selectEl, field, keepScroll } from '../dom.js';
+import { h, icon, mount, toast, thumb, fmt, segmented, selectEl, field, keepScroll, copyText } from '../dom.js';
 import { get, post } from '../api.js';
 import { state, caps, isIndividual, user, savePrefs } from '../state.js';
 import { openProgress } from '../progress.js';
@@ -133,15 +133,49 @@ async function runGrab() {
     session.tab = 'media';
     if (ui) renderResult();
   } catch (err) {
-    if (ui) {
-      mount(ui.body, h('div', { class: 'card', style: { flex: '1' } }, h('div', { class: 'state state--error' }, icon('x'),
-        h('h3', null, t('grab.failed')), h('p', null, err.message),
-        state.status.features.browser ? null : h('p', { class: 'small', style: { fontFamily: 'var(--body)' } }, t('grab.failedHint')))));
-    }
+    if (ui) renderFailure(err);
   } finally {
     btn.disabled = false;
     btn.replaceChildren(icon('bolt'), h('span', null, t('grab.go')));
   }
+}
+
+// Failure card. "unsupported" means every module was tried and none
+// recognised the page: the user is asked to report the site.
+function renderFailure(err) {
+  const data = err.data || {};
+  if (data.code !== 'unsupported') {
+    mount(ui.body, h('div', { class: 'card', style: { flex: '1' } }, h('div', { class: 'state state--error' }, icon('x'),
+      h('h3', null, t('grab.failed')), h('p', null, err.message))));
+    return;
+  }
+  const report = state.status.report_url;
+  const reportHref = report ? report.replaceAll('{url}', encodeURIComponent(session.url)) : '';
+  const actions = h('div', { class: 'row', style: { justifyContent: 'center' } });
+  if (reportHref) {
+    actions.append(h('a', { class: 'btn btn--primary', href: reportHref, target: '_blank', rel: 'noopener noreferrer' }, icon('link'), t('grab.report')));
+  }
+  actions.append(h('button', { class: 'btn', type: 'button', onclick: async () => {
+    const ok = await copyText(session.url);
+    toast(ok ? t('grab.linkCopied') : t('admin.copyFailed'), ok ? 'ok' : 'error');
+  } }, icon('copy'), t('grab.copyLink')));
+  if (state.status.features.browser && session.extractor !== 'browser') {
+    actions.append(h('button', { class: 'btn btn--ghost', type: 'button', onclick: () => { session.extractor = 'browser'; ui.root.querySelector('.urlbar select').value = 'browser'; runGrab(); } }, icon('refresh'), t('grab.tryBrowser')));
+  }
+  const detailOpen = { v: false };
+  const detail = h('p', { class: 'mono small', hidden: true, style: { maxWidth: '640px', overflowWrap: 'anywhere' } }, data.detail || '');
+  mount(ui.body, h('div', { class: 'card', style: { flex: '1' } }, h('div', { class: 'state' }, icon('search'),
+    h('h3', null, t('grab.unsupportedTitle')),
+    h('p', null, reportHref ? t('grab.unsupportedText') : t('grab.unsupportedTextNoLink')),
+    h('div', { class: 'chips', style: { justifyContent: 'center', maxWidth: '640px' } },
+      (data.tried || []).map((m) => h('span', { class: 'tag' }, m))),
+    actions,
+    data.detail ? h('button', { class: 'btn btn--ghost btn--sm', type: 'button', onclick: (e) => {
+      detailOpen.v = !detailOpen.v;
+      detail.hidden = !detailOpen.v;
+      e.currentTarget.textContent = detailOpen.v ? t('grab.hideDetails') : t('grab.showDetails');
+    } }, t('grab.showDetails')) : null,
+    detail)));
 }
 
 function seasonOf(media, epID) {
@@ -206,6 +240,7 @@ function renderMedia() {
       h('div', { style: { minWidth: '0' } },
         h('h3', { class: 'media-title', title: media.title }, media.title || t('grab.untitled')),
         h('div', { class: 'facts' }, facts.map((f) => h('span', { class: 'tag' }, f))),
+        media.modules?.length ? h('div', { class: 'small muted', style: { marginBottom: '6px' }, title: t('grab.modulesHint') }, t('grab.foundBy', { list: media.modules.join(', ') })) : null,
         h('a', { class: 'media-link', href: media.page_url, target: '_blank', rel: 'noopener noreferrer', title: media.page_url }, media.page_url))),
     (media.notes || []).map((n) => h('div', { class: 'note' }, n)),
     translationsBlock(),

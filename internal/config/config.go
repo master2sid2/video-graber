@@ -48,6 +48,7 @@ type Config struct {
 	CookiesFile string
 	Proxy       string
 	UserAgent   string
+	ReportURL   string
 
 	MaxJobs        int
 	TempTTL        time.Duration
@@ -127,6 +128,7 @@ func Parse(args []string) (*Config, error) {
 
 	fs.StringVar(&c.CookiesFile, "cookies-file", envOr("cookies-file", ""), "global Netscape cookies.txt passed to yt-dlp")
 	fs.StringVar(&c.Proxy, "proxy", envOr("proxy", ""), "HTTP(S)/SOCKS proxy for outgoing requests, yt-dlp and ffmpeg")
+	fs.StringVar(&c.ReportURL, "report-url", envOr("report-url", ""), "where users report unsupported sites (URL or mailto:, {url} is replaced with the page URL)")
 	fs.StringVar(&c.UserAgent, "user-agent", envOr("user-agent", DefaultUserAgent), "User-Agent for outgoing requests")
 
 	fs.IntVar(&c.MaxJobs, "max-jobs", envInt("max-jobs", 2), "max concurrent ffmpeg jobs")

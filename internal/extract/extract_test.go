@@ -63,6 +63,8 @@ func TestParseLabeledList(t *testing.T) {
 		{"[360p]https://a/360.mp4,[720p]//a/720.mp4", []labeled{{"360p", "https://a/360.mp4"}, {"720p", "https://a/720.mp4"}}},
 		{"https://a/1.m3u8 or https://b/1.m3u8", []labeled{{"", "https://a/1.m3u8"}}},
 		{"/v/file.mp4", []labeled{{"", "https://site.example/v/file.mp4"}}},
+		{"[360]https://a/k=1,end=2/360.m3u8,[720]https://b/k=3,end=4/720.mp4", []labeled{{"360", "https://a/k=1,end=2/360.m3u8"}, {"720", "https://b/k=3,end=4/720.mp4"}}},
+		{"https://a/k=1,end=2/v.m3u8", []labeled{{"", "https://a/k=1,end=2/v.m3u8"}}},
 	}
 	for _, tt := range tests {
 		got := parseLabeledList(tt.in, base)
@@ -136,7 +138,7 @@ func TestEpisodeDetection(t *testing.T) {
 	for i := range eps {
 		eps[i].group = episodeGroup(eps[i].Label)
 	}
-	got := filterEpisodes(eps, "")
+	got := filterEpisodes(eps)
 	if len(got) != 3 || got[2].URL != "u3" {
 		t.Fatalf("filterEpisodes kept %+v", got)
 	}

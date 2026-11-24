@@ -85,7 +85,8 @@ function aboutCard(span) {
       h('dt', null, t('settings.browser')), h('dd', null, yesno(s.features.browser)),
       h('dt', null, t('settings.videoEncoders')), h('dd', { class: 'mono small' }, (caps().video_codecs || []).filter((c) => c !== 'copy').join(', ') || '—'),
       h('dt', null, t('settings.audioEncoders')), h('dd', { class: 'mono small' }, (caps().audio_codecs || []).filter((c) => c !== 'copy').join(', ') || '—'),
-      h('dt', null, t('settings.workers')), h('dd', null, String(s.max_jobs)))));
+      h('dt', null, t('settings.workers')), h('dd', null, String(s.max_jobs)),
+      h('dt', null, t('settings.modules')), h('dd', null, h('div', { class: 'chips' }, (s.modules || []).map((m) => h('span', { class: 'tag' }, m)))))));
 }
 
 export async function render(root) {

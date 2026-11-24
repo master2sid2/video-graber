@@ -23,6 +23,7 @@ type candidate struct {
 	Height int
 	Proto  Protocol
 	Score  int
+	Via    string // module that found it
 }
 
 // playerLink is an element pointing to an embedded player (e.g. a voice-over tab).
@@ -52,20 +53,71 @@ type page struct {
 	Episodes    []episodeLink
 	Subtitles   []Track
 	Playlist    *pjsPlaylist
-	Encrypted   bool // a Playerjs config is obfuscated
+	Encrypted   bool // a player configuration is obfuscated
 	DurationISO float64
+	// Modules lists the analysis modules that recognised something.
+	Modules []string
+
+	seenCand, seenIframe, seenPlayer, seenEp map[string]bool
+}
+
+func (p *page) hit(module string) {
+	if !slices.Contains(p.Modules, module) {
+		p.Modules = append(p.Modules, module)
+	}
+}
+
+// doc is the parsed input shared by all modules.
+type doc struct {
+	URL  string
+	Base *url.URL
+	Root *xhtml.Node
+	Raw  string // whole document with JS/HTML escaping undone
+}
+
+// walk calls fn for every element node.
+func (d *doc) walk(fn func(n *xhtml.Node)) {
+	var rec func(*xhtml.Node)
+	rec = func(n *xhtml.Node) {
+		if n.Type == xhtml.ElementNode {
+			fn(n)
+		}
+		for c := range n.ChildNodes() {
+			rec(c)
+		}
+	}
+	rec(d.Root)
+}
+
+func (p *page) addCandidate(d *doc, raw, label string, score int, via string) {
+	u := absURL(d.Base, unescapeJS(raw))
+	if u == "" || p.seenCand[u] || isImageURL(u) || isAdURL(u) {
+		return
+	}
+	p.seenCand[u] = true
+	p.Candidates = append(p.Candidates, candidate{URL: u, Label: label, Height: heightFrom(label + " " + u), Proto: protoFor(u), Score: score, Via: via})
+	p.hit(via)
+}
+
+func (p *page) addIframe(d *doc, raw string) {
+	u := absURL(d.Base, unescapeJS(raw))
+	if u == "" || p.seenIframe[u] || isImageURL(u) || isAdURL(u) {
+		return
+	}
+	p.seenIframe[u] = true
+	p.Iframes = append(p.Iframes, u)
+	p.hit("iframes")
 }
 
 var (
 	reMediaURL = regexp.MustCompile(`(?i)(?:https?:)?//[^\s"'<>\\(){}\[\]]+?\.(m3u8|mpd|mp4|webm|mkv|m4v|mov)(?:\?[^\s"'<>\\(){}\[\]]*)?`)
 	reEpisode  = []*regexp.Regexp{
 		regexp.MustCompile(`(?i)(\d{1,4})\s*(?:-?(?:я|й|ая))?\s*(?:серия|серии|эпизод|episode|ep\.?\b|series\b|bölüm|화|話)`),
-		regexp.MustCompile(`(?i)(?:серия|эпизод|episode|ep\.?|e)\s*#?\s*(\d{1,4})\b`),
+		regexp.MustCompile(`(?i)(?:серия|эпизод|episode|ep\.?|e)\s*(?:#|№)?\s*(\d{1,4})\b`),
 	}
-	reSeason   = regexp.MustCompile(`(?i)(\d{1,3})\s*(?:-?й)?\s*(?:сезон|season)|(?:сезон|season|s)\s*(\d{1,3})\b`)
-	reHeight   = regexp.MustCompile(`(?i)(?:^|[^\d])(2160|1440|1080|720|576|480|360|240|144)(?:p|[^\d]|$)`)
-	reISODur   = regexp.MustCompile(`^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$`)
-	playerAttr = []string{"data-url-player", "data-player-url", "data-player", "data-iframe", "data-iframe-src", "data-embed", "data-link", "data-url"}
+	reSeason = regexp.MustCompile(`(?i)(\d{1,3})\s*(?:-?й)?\s*(?:сезон|season)|(?:сезон|season|s)\s*(\d{1,3})\b`)
+	reHeight = regexp.MustCompile(`(?i)(?:^|[^\d])(2160|1440|1080|720|576|480|360|240|144)(?:p|[^\d]|$)`)
+	reISODur = regexp.MustCompile(`^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$`)
 )
 
 // unescapeJS undoes the escaping commonly found in inline scripts and attributes.
@@ -75,7 +127,7 @@ func unescapeJS(s string) string {
 
 func absURL(base *url.URL, ref string) string {
 	ref = strings.TrimSpace(html.UnescapeString(ref))
-	if ref == "" || strings.HasPrefix(ref, "javascript:") || strings.HasPrefix(ref, "data:") || strings.HasPrefix(ref, "#") {
+	if ref == "" || strings.HasPrefix(ref, "javascript:") || strings.HasPrefix(ref, "data:") || strings.HasPrefix(ref, "#") || strings.HasPrefix(ref, "about:") {
 		return ""
 	}
 	r, err := url.Parse(ref)
@@ -101,6 +153,20 @@ func protoFor(u string) Protocol {
 		return ProtoDASH
 	}
 	return ProtoHTTP
+}
+
+// hasMediaExt reports whether the URL path ends with a known media extension.
+func hasMediaExt(u string) bool {
+	p := strings.ToLower(u)
+	if i := strings.IndexAny(p, "?#"); i >= 0 {
+		p = p[:i]
+	}
+	for _, ext := range []string{".m3u8", ".mpd", ".mp4", ".webm", ".mkv", ".m4v", ".mov", ".mp3", ".m4a", ".ogg", ".opus", ".flac", ".wav", ".ts", ".vtt", ".srt"} {
+		if strings.HasSuffix(p, ext) {
+			return true
+		}
+	}
+	return false
 }
 
 func heightFrom(s string) int {
@@ -180,172 +246,25 @@ func isImageURL(s string) bool {
 	return false
 }
 
-// analyzePage parses an HTML document and collects everything of interest.
+// analyzePage parses an HTML document (already decoded to UTF-8) and runs
+// every analysis module on it.
 func analyzePage(body []byte, pageURL string) *page {
 	base, _ := url.Parse(pageURL)
-	p := &page{URL: pageURL}
-	doc, err := xhtml.Parse(bytes.NewReader(body))
+	p := &page{URL: pageURL, seenCand: map[string]bool{}, seenIframe: map[string]bool{}, seenPlayer: map[string]bool{}, seenEp: map[string]bool{}}
+	root, err := xhtml.Parse(bytes.NewReader(body))
 	if err != nil {
 		return p
 	}
-
-	var ogTitle, docTitle, h1 string
-	seenCand := map[string]bool{}
-	addCand := func(raw, label string, score int) {
-		u := absURL(base, unescapeJS(raw))
-		if u == "" || seenCand[u] || isImageURL(u) {
-			return
-		}
-		seenCand[u] = true
-		p.Candidates = append(p.Candidates, candidate{URL: u, Label: label, Height: heightFrom(label + " " + u), Proto: protoFor(u), Score: score})
+	d := &doc{URL: pageURL, Base: base, Root: root, Raw: unescapeJS(string(body))}
+	for _, m := range Modules {
+		m.Analyze(d, p)
 	}
-	seenIframe := map[string]bool{}
-	addIframe := func(raw string) {
-		u := absURL(base, unescapeJS(raw))
-		if u == "" || seenIframe[u] || isImageURL(u) || isAdURL(u) {
-			return
-		}
-		seenIframe[u] = true
-		p.Iframes = append(p.Iframes, u)
-	}
-	seenPlayer := map[string]bool{}
-	seenEp := map[string]bool{}
-	var scripts []string
-
-	var walk func(*xhtml.Node)
-	walk = func(n *xhtml.Node) {
-		if n.Type == xhtml.ElementNode {
-			switch n.DataAtom {
-			case atom.Title:
-				if docTitle == "" {
-					docTitle = textOf(n)
-				}
-			case atom.H1:
-				if h1 == "" {
-					h1 = textOf(n)
-				}
-			case atom.Meta:
-				prop := strings.ToLower(cmp.Or(attr(n, "property"), attr(n, "name"), attr(n, "itemprop")))
-				content := attr(n, "content")
-				switch prop {
-				case "og:title":
-					ogTitle = content
-				case "og:image", "twitter:image":
-					if p.Thumbnail == "" {
-						p.Thumbnail = absURL(base, content)
-					}
-				case "og:video", "og:video:url", "og:video:secure_url", "twitter:player:stream", "contenturl":
-					if !strings.Contains(content, ".swf") {
-						if protoFor(content) != ProtoHTTP || reMediaURL.MatchString(content) {
-							addCand(content, "", 30)
-						}
-					}
-				case "duration":
-					if p.DurationISO == 0 {
-						p.DurationISO = parseISODuration(content)
-					}
-				}
-			case atom.Video, atom.Audio, atom.Source:
-				for _, k := range []string{"src", "data-src"} {
-					if v := attr(n, k); v != "" && !strings.HasPrefix(v, "blob:") {
-						addCand(v, cmp.Or(attr(n, "label"), attr(n, "title"), attr(n, "size"), attr(n, "res")), 50)
-					}
-				}
-			case atom.Track:
-				if src := absURL(base, attr(n, "src")); src != "" {
-					kind := strings.ToLower(attr(n, "kind"))
-					if kind == "" || kind == "subtitles" || kind == "captions" {
-						p.Subtitles = append(p.Subtitles, Track{
-							Label: cmp.Or(attr(n, "label"), attr(n, "srclang"), "Subtitles"), Lang: attr(n, "srclang"),
-							URL: src, Protocol: ProtoHTTP,
-						})
-					}
-				}
-			case atom.Iframe, atom.Frame, atom.Embed:
-				for _, k := range []string{"src", "data-src", "data-lazy-src", "data-original"} {
-					if v := attr(n, k); v != "" && v != "about:blank" {
-						addIframe(v)
-					}
-				}
-			case atom.Script:
-				if strings.Contains(attr(n, "type"), "ld+json") {
-					p.parseJSONLD(textOf(n), addCand)
-				}
-				if n.FirstChild != nil {
-					scripts = append(scripts, n.FirstChild.Data)
-				}
-			case atom.A, atom.Option:
-				href := attr(n, "href")
-				if n.DataAtom == atom.Option {
-					href = attr(n, "value")
-				}
-				label := cmp.Or(attr(n, "title"), textOf(n), attr(n, "data-title"))
-				if u := absURL(base, href); u != "" && !seenEp[u] {
-					if num, ok := episodeNumber(label); ok {
-						seenEp[u] = true
-						ep := episodeLink{Label: label, URL: u, Number: num, Season: seasonNumber(label)}
-						ep.group = episodeGroup(label)
-						p.Episodes = append(p.Episodes, ep)
-					}
-				}
-			}
-
-			// Elements pointing to players: voice-over tabs, server buttons...
-			for _, k := range playerAttr {
-				v := attr(n, k)
-				if v == "" || !looksLikeURL(v) || isImageURL(v) {
-					continue
-				}
-				u := absURL(base, unescapeJS(v))
-				if u == "" || seenPlayer[u] {
-					continue
-				}
-				seenPlayer[u] = true
-				label := cmp.Or(textOf(n), attr(n, "title"), attr(n, "data-title"), attr(n, "aria-label"))
-				p.Players = append(p.Players, playerLink{Label: label, URL: u, Selected: isSelected(n)})
-				break
-			}
-			// Subtitle URLs stored in attributes such as data-ru_subtitle.
-			for _, a := range n.Attr {
-				if strings.HasSuffix(a.Key, "subtitle") && looksLikeURL(a.Val) {
-					lang := strings.TrimSuffix(strings.TrimPrefix(a.Key, "data-"), "_subtitle")
-					p.Subtitles = append(p.Subtitles, Track{Label: strings.ToUpper(lang), Lang: lang, URL: absURL(base, a.Val), Protocol: ProtoHTTP})
-				}
-			}
-		}
-		for c := range n.ChildNodes() {
-			walk(c)
-		}
-	}
-	walk(doc)
-
-	p.Title = strings.TrimSpace(cmp.Or(ogTitle, h1, docTitle))
-
-	// Playerjs configuration (file: "..."), possibly with a playlist.
-	raw := unescapeJS(string(body))
-	if pl, enc := findPlayerjs(raw, base); pl != nil {
-		p.Playlist = pl
-	} else if enc {
-		p.Encrypted = true
-	}
-
-	// Bare media URLs anywhere in the document (scripts, JSON blobs, attributes).
-	for _, m := range reMediaURL.FindAllString(raw, -1) {
-		score := 10
-		if strings.Contains(strings.ToLower(m), ".m3u8") {
-			score = 20
-		}
-		addCand(m, "", score)
-	}
-	_ = scripts
-
-	p.Episodes = filterEpisodes(p.Episodes, pageURL)
-	p.Candidates = slices.DeleteFunc(p.Candidates, func(c candidate) bool { return isAdURL(c.URL) })
+	p.Episodes = filterEpisodes(p.Episodes)
 	slices.SortStableFunc(p.Candidates, func(a, b candidate) int { return b.Score - a.Score })
 	return p
 }
 
-func (p *page) parseJSONLD(s string, add func(string, string, int)) {
+func parseJSONLD(s string, onURL func(string), onThumb func(string), onDuration func(string)) {
 	var v any
 	if json.Unmarshal([]byte(s), &v) != nil {
 		return
@@ -355,18 +274,19 @@ func (p *page) parseJSONLD(s string, add func(string, string, int)) {
 		switch t := v.(type) {
 		case map[string]any:
 			for k, val := range t {
+				s, isStr := val.(string)
 				switch strings.ToLower(k) {
 				case "contenturl":
-					if s, ok := val.(string); ok {
-						add(s, "", 40)
+					if isStr {
+						onURL(s)
 					}
 				case "thumbnailurl":
-					if s, ok := val.(string); ok && p.Thumbnail == "" {
-						p.Thumbnail = s
+					if isStr {
+						onThumb(s)
 					}
 				case "duration":
-					if s, ok := val.(string); ok && p.DurationISO == 0 {
-						p.DurationISO = parseISODuration(s)
+					if isStr {
+						onDuration(s)
 					}
 				}
 				walk(val)
@@ -447,7 +367,7 @@ func episodeGroup(label string) string {
 	}
 	s = reSeason.ReplaceAllString(s, " ")
 	s = strings.Map(func(r rune) rune {
-		if r >= '0' && r <= '9' {
+		if r >= '0' && r <= '9' || r == '№' || r == '#' {
 			return ' '
 		}
 		return r
@@ -456,7 +376,7 @@ func episodeGroup(label string) string {
 }
 
 // filterEpisodes keeps the largest group of same-show episode links.
-func filterEpisodes(eps []episodeLink, pageURL string) []episodeLink {
+func filterEpisodes(eps []episodeLink) []episodeLink {
 	if len(eps) < 2 {
 		return nil
 	}
@@ -489,7 +409,6 @@ func filterEpisodes(eps []episodeLink, pageURL string) []episodeLink {
 		}
 		return a.Number - b.Number
 	})
-	_ = pageURL
 	return out
 }
 
@@ -506,7 +425,7 @@ func isAdURL(u string) bool {
 			return true
 		}
 	}
-	for _, w := range []string{"/ads/", "/ad/", "vast", "preroll", "/banner", "adserver", "/promo"} {
+	for _, w := range []string{"/ads/", "/ad/", "/adblock/", "vast", "preroll", "/banner", "adserver", "/promo"} {
 		if strings.Contains(l, w) {
 			return true
 		}

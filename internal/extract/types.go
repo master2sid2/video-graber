@@ -12,6 +12,7 @@ import (
 	"errors"
 	"maps"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -86,6 +87,7 @@ type Stream struct {
 	Title     string   `json:"title,omitempty"`
 
 	probed bool
+	via    []string // analysis modules that produced the stream
 }
 
 // FindFormat returns the format with the given id.
@@ -143,6 +145,8 @@ type Media struct {
 	Episodes     []Choice  `json:"episodes"`
 	Selected     Selection `json:"selected"`
 	Notes        []string  `json:"notes,omitempty"`
+	// Modules lists the analysis modules that recognised the page.
+	Modules []string `json:"modules,omitempty"`
 }
 
 // Resolver resolves a selection into a stream.
@@ -183,4 +187,29 @@ func hostMatches(host string, domains ...string) bool {
 		}
 	}
 	return false
+}
+
+// UnsupportedError means that no extractor or analysis module could find
+// media on the page: the site needs a new module or a site-specific extractor.
+type UnsupportedError struct {
+	Tried []string
+	Cause error
+}
+
+func (e *UnsupportedError) Error() string {
+	return "no analysis module could find a video on this page"
+}
+
+func (e *UnsupportedError) Unwrap() error { return e.Cause }
+
+func mergeNames(lists ...[]string) []string {
+	var out []string
+	for _, l := range lists {
+		for _, n := range l {
+			if n != "" && !slices.Contains(out, n) {
+				out = append(out, n)
+			}
+		}
+	}
+	return out
 }

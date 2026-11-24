@@ -127,6 +127,12 @@ func (s *Server) handleExtract(w http.ResponseWriter, r *http.Request) {
 	res, err := s.engine.Extract(ctx, req.URL, extract.Options{Cookies: cookies, Force: req.Extractor})
 	if err != nil {
 		s.log.Info("extraction failed", "url", req.URL, "err", err, "took", time.Since(start).Round(time.Millisecond))
+		if ue, ok := errors.AsType[*extract.UnsupportedError](err); ok {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
+				"error": ue.Error(), "code": "unsupported", "tried": ue.Tried, "detail": friendlyError(ue.Cause),
+			})
+			return
+		}
 		writeError(w, http.StatusUnprocessableEntity, friendlyError(err))
 		return
 	}

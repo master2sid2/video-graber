@@ -98,10 +98,25 @@ func (e *Engine) Extract(ctx context.Context, pageURL string, opts Options) (*Re
 		}
 	}
 	if err != nil {
+		if errors.Is(err, ErrNoMedia) {
+			return nil, &UnsupportedError{Tried: e.Tried(), Cause: err}
+		}
 		return nil, err
 	}
 	e.wrap(res)
 	return res, nil
+}
+
+// Tried lists everything the automatic mode attempts, in order.
+func (e *Engine) Tried() []string {
+	names := ModuleNames()
+	if e.Generic.Browser != nil {
+		names = append(names, "browser")
+	}
+	if e.YtDlp != nil {
+		names = append(names, "yt-dlp")
+	}
+	return names
 }
 
 // wrap post-processes every resolved stream (validation, probing).
@@ -139,6 +154,6 @@ func (e *Engine) browserOnly(ctx context.Context, pageURL string) (*Result, erro
 	if p, _, err := e.Generic.fetchPage(ctx, pageURL, ""); err == nil && p.Title != "" {
 		title = p.Title
 	}
-	media := &Media{PageURL: pageURL, Title: title, Extractor: "browser", Duration: st.Duration}
+	media := &Media{PageURL: pageURL, Title: title, Extractor: "browser", Duration: st.Duration, Modules: []string{"browser"}}
 	return &Result{Media: media, Stream: st, Resolve: func(context.Context, Selection) (*Stream, error) { return st, nil }}, nil
 }

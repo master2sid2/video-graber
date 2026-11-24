@@ -103,6 +103,7 @@ name in upper case with dashes replaced by underscores (`-max-jobs` →
 | `-chrome` | disabled | Chrome/Chromium path or `auto` |
 | `-browser-timeout` | `30s` | how long the headless browser waits for media |
 | `-proxy` | – | proxy for page requests, yt-dlp, ffmpeg and Chrome |
+| `-report-url` | – | link shown for unsupported sites (`https://…` or `mailto:…`; `{url}` is replaced with the page URL) |
 | `-user-agent` | Chrome UA | User-Agent of outgoing requests |
 | `-max-jobs` | `2` | concurrent ffmpeg jobs |
 | `-temp-ttl` | `1h` | delete prepared files that were not downloaded |
@@ -174,6 +175,44 @@ web/                UI (HTML, CSS, ES modules, fonts), embedded with go:embed
 Copy `web/js/locales/en.js` to `web/js/locales/<code>.js`, translate the
 values and register it in `web/js/i18n.js`. A language selector appears in
 Settings as soon as more than one language is available.
+
+### How pages are analysed
+
+Every URL goes through the same pipeline:
+
+1. **Site-specific extractors** (`extract.Extractor`) for hosts with an API
+   or special handling; yt-dlp is one of them for YouTube & co.
+2. **The generic extractor**, which runs every **analysis module** on the page
+   and on each embedded player it follows (iframes, also ones injected by
+   scripts; the player with the longest episode list wins):
+
+   | Module | Recognises |
+   | --- | --- |
+   | `html5-video` | `<video>`, `<source>`, `<track>` |
+   | `json-ld` | schema.org `VideoObject.contentUrl` |
+   | `iframes` | embedded players (followed up to 3 levels) |
+   | `player-tabs` | voice-over / server tabs (`data-url-player`, `data-player`, …) |
+   | `episode-links` | links to episode pages ("Episode 5", "5 серия"; downloads/torrents are ignored) |
+   | `playerjs` | Playerjs `file:` configs and playlists |
+   | `js-playlist` | JavaScript arrays like `[{title: 'Episode 1', file: '…'}]`, nested quality lists (`files`, `sources`) |
+   | `media-urls` | bare `.m3u8` / `.mpd` / `.mp4` URLs in the document |
+
+   Pages in legacy encodings (windows-1251, koi8-r, …) are converted to
+   UTF-8 first. Playlists served by scripts without an extension are sniffed.
+3. **The headless browser** (`-chrome`) when static analysis found nothing.
+4. **yt-dlp** as the last fallback.
+
+If nothing matches, the user sees "This site is not supported yet" with the
+list of tried modules and a button to report the link (`-report-url`).
+The detected modules are shown under the title of every grabbed page.
+
+### Adding an analysis module
+
+Add a `moduleFunc{name, fn}` to `extract.Modules` (`internal/extract/modules.go`).
+A module receives the parsed document (`doc`: DOM, base URL, unescaped raw
+text) and contributes findings to the `page`: candidates, a playlist,
+episode links, player tabs or iframes. Keep modules generic — one page
+*pattern*, not one site.
 
 ### Adding a site-specific extractor
 

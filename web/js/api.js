@@ -1,9 +1,10 @@
 // JSON API client.
 
 export class ApiError extends Error {
-  constructor(status, message) {
+  constructor(status, message, data = null) {
     super(message);
     this.status = status;
+    this.data = data || {};
   }
 }
 
@@ -29,7 +30,7 @@ export async function api(method, path, body) {
   }
   if (!res.ok) {
     if (res.status === 401 && !path.startsWith('/api/login')) onUnauthorized();
-    throw new ApiError(res.status, data?.error || res.statusText);
+    throw new ApiError(res.status, data?.error || res.statusText, data);
   }
   return data;
 }

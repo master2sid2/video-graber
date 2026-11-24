@@ -21,6 +21,8 @@ type statusResponse struct {
 	Extractors    []string `json:"extractors"`
 	Capabilities  any      `json:"capabilities"`
 	MaxJobs       int      `json:"max_jobs"`
+	Modules       []string `json:"modules,omitempty"`
+	ReportURL     string   `json:"report_url,omitempty"`
 }
 
 type features struct {
@@ -48,6 +50,8 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if !s.individual() || resp.User != nil {
 		resp.Extractors = s.engine.Extractors()
 		resp.Capabilities = s.caps
+		resp.Modules = s.engine.Tried()
+		resp.ReportURL = s.cfg.ReportURL
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

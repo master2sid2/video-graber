@@ -185,7 +185,7 @@ func (y *YtDlp) Extract(ctx context.Context, pageURL string, opts Options) (*Res
 	if err != nil {
 		return nil, err
 	}
-	media := &Media{PageURL: pageURL, Title: info.Title, Thumbnail: ytThumb(info), Extractor: "yt-dlp", Duration: info.Duration}
+	media := &Media{PageURL: pageURL, Title: info.Title, Thumbnail: ytThumb(info), Extractor: "yt-dlp", Duration: info.Duration, Modules: []string{"yt-dlp"}}
 	if info.Extractor != "" {
 		media.Extractor = "yt-dlp:" + strings.ToLower(info.Extractor)
 	}

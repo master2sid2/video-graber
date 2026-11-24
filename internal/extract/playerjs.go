@@ -17,10 +17,12 @@ type pjsLeaf struct {
 	Path     []string // titles from the root to the leaf
 	File     string
 	Subtitle string
+	Label    string // quality label of an untitled leaf ("720p")
 }
 
 type pjsPlaylist struct {
 	Leaves []pjsLeaf
+	Via    string // module that found the playlist
 }
 
 var reFileKey = regexp.MustCompile(`["']?\bfile["']?\s*:\s*`)
@@ -117,12 +119,20 @@ func findPlayerjs(raw string, base *url.URL) (pl *pjsPlaylist, encrypted bool) {
 func parsePjsJSON(val string, base *url.URL) *pjsPlaylist {
 	var v any
 	if err := json.Unmarshal([]byte(val), &v); err != nil {
-		// Some sites use single quotes; try a naive conversion.
-		if err := json.Unmarshal([]byte(strings.ReplaceAll(val, "'", `"`)), &v); err != nil {
+		// Not strict JSON: treat it as a JavaScript literal.
+		if err := json.Unmarshal([]byte(jsToJSON(val)), &v); err != nil {
 			return nil
 		}
 	}
 	p := &pjsPlaylist{}
+	str := func(m map[string]any, keys ...string) string {
+		for _, k := range keys {
+			if s, ok := m[k].(string); ok && strings.TrimSpace(s) != "" {
+				return s
+			}
+		}
+		return ""
+	}
 	var walk func(v any, path []string)
 	walk = func(v any, path []string) {
 		switch t := v.(type) {
@@ -131,31 +141,60 @@ func parsePjsJSON(val string, base *url.URL) *pjsPlaylist {
 				walk(x, path)
 			}
 		case map[string]any:
-			title, _ := t["title"].(string)
-			title = strings.TrimSpace(stripTags(title))
+			title := strings.TrimSpace(stripTags(str(t, "title", "name", "comment")))
 			next := path
 			if title != "" {
 				next = append(slices.Clone(path), title)
 			}
-			if f, ok := t["folder"]; ok {
-				walk(f, next)
-				return
-			}
-			if f, ok := t["playlist"]; ok {
-				walk(f, next)
-				return
-			}
-			if f, ok := t["file"].(string); ok && f != "" {
-				sub, _ := t["subtitle"].(string)
-				if len(parseLabeledList(f, base)) > 0 {
-					p.Leaves = append(p.Leaves, pjsLeaf{Path: next, File: f, Subtitle: sub})
+			for _, k := range []string{"folder", "playlist", "episodes", "items"} {
+				if f, ok := t[k].([]any); ok {
+					walk(f, next)
+					return
 				}
+			}
+			file := str(t, "file", "src", "hls", "url", "stream", "m3u8")
+			// Nested quality lists: sources/files/qualities: [{file, label|title}, …]
+			for _, k := range []string{"sources", "files", "qualities"} {
+				srcs, ok := t[k].([]any)
+				if !ok {
+					continue
+				}
+				var parts []string
+				for _, sv := range srcs {
+					if sm, ok := sv.(map[string]any); ok {
+						if f := str(sm, "file", "src", "url", "hls"); f != "" {
+							parts = append(parts, "["+str(sm, "label", "title", "res", "quality")+"]"+f)
+						}
+					}
+				}
+				if len(parts) > 0 {
+					file = strings.Join(parts, ",")
+					break
+				}
+			}
+			if file != "" && len(parseLabeledList(file, base)) > 0 {
+				p.Leaves = append(p.Leaves, pjsLeaf{Path: next, File: file, Subtitle: str(t, "subtitle", "subtitles"), Label: str(t, "label", "quality", "res")})
 			}
 		}
 	}
 	walk(v, nil)
 	if len(p.Leaves) == 0 {
 		return nil
+	}
+	// Untitled leaves, or leaves titled only with a quality ("720p"), are one
+	// source in several qualities rather than episodes.
+	if len(p.Leaves) > 1 && !slices.ContainsFunc(p.Leaves, func(l pjsLeaf) bool {
+		return len(l.Path) > 1 || len(l.Path) == 1 && !isQualityLabel(l.Path[0])
+	}) {
+		var parts []string
+		for _, l := range p.Leaves {
+			label := l.Label
+			if len(l.Path) == 1 {
+				label = l.Path[0]
+			}
+			parts = append(parts, "["+label+"]"+l.File)
+		}
+		p.Leaves = []pjsLeaf{{File: strings.Join(parts, ","), Subtitle: p.Leaves[0].Subtitle}}
 	}
 	return p
 }
@@ -169,25 +208,41 @@ type labeled struct {
 	URL   string
 }
 
-var reLabeled = regexp.MustCompile(`\[([^\]]*)\]\s*([^,\[\]\s]+)`)
+var reLabel = regexp.MustCompile(`\[([^\]]*)\]`)
 
 // parseLabeledList parses "[360p]url1,[720p]url2" or "url1 or url2" or "url".
+// URLs may themselves contain commas (signed CDN links), so items are split
+// only where the next item starts.
 func parseLabeledList(s string, base *url.URL) []labeled {
 	var out []labeled
 	add := func(label, raw string) {
-		raw, _, _ = strings.Cut(strings.TrimSpace(raw), " or ")
+		raw = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(raw), ","))
+		raw, _, _ = strings.Cut(raw, " or ")
 		if u := absURL(base, raw); u != "" {
 			out = append(out, labeled{Label: strings.TrimSpace(label), URL: u})
 		}
 	}
-	if ms := reLabeled.FindAllStringSubmatch(s, -1); len(ms) > 0 {
-		for _, m := range ms {
-			add(m[1], m[2])
+	if locs := reLabel.FindAllStringSubmatchIndex(s, -1); len(locs) > 0 && strings.HasPrefix(strings.TrimSpace(s), "[") {
+		for i, l := range locs {
+			end := len(s)
+			if i+1 < len(locs) {
+				end = locs[i+1][0]
+			}
+			add(s[l[2]:l[3]], s[l[1]:end])
 		}
 		return out
 	}
+	var parts []string
 	for part := range strings.SplitSeq(s, ",") {
-		if p := strings.TrimSpace(part); p != "" && (strings.Contains(p, "//") || strings.HasPrefix(p, "/")) {
+		p := strings.TrimSpace(part)
+		if len(parts) > 0 && !(strings.Contains(p, "//") || strings.HasPrefix(p, "/")) {
+			parts[len(parts)-1] += "," + part // comma inside the previous URL
+			continue
+		}
+		parts = append(parts, part)
+	}
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" && (strings.Contains(p, "//") || strings.HasPrefix(p, "/")) {
 			add("", p)
 		}
 	}
@@ -286,3 +341,8 @@ func slug(s string) string {
 	}
 	return strings.TrimSuffix(b.String(), "-")
 }
+
+var reQuality = regexp.MustCompile(`(?i)^\s*(?:(?:2160|1440|1080|720|576|480|360|240|144)\s*p?|4k|uhd|full\s*hd|fhd|hd|sd)(?:\s*(?:hd|sd|60|fps))*\s*$`)
+
+// isQualityLabel reports labels such as "720", "1080p", "Full HD".
+func isQualityLabel(s string) bool { return reQuality.MatchString(stripTags(s)) }
