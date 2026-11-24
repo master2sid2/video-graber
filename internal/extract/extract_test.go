@@ -102,6 +102,21 @@ func TestPlayerjsPlaylist(t *testing.T) {
 	}
 }
 
+func TestEpisodeName(t *testing.T) {
+	cases := []struct{ title, ep, want string }{
+		{"Некий ITEM тёмной стороны / Toaru Anbu no Item", "Серия 1", "Некий ITEM тёмной стороны / Toaru Anbu no Item - Серия 1"},
+		{"Дорама Демон / Гоблин 1 серия русская озвучка", "Демон / Гоблин 2 серия", "Демон / Гоблин 2 серия"},
+		{"Show", "", "Show"},
+		{"", "Episode 3", "Episode 3"},
+		{"Big Show", "Episode 3", "Big Show - Episode 3"},
+	}
+	for _, c := range cases {
+		if got := EpisodeName(c.title, c.ep); got != c.want {
+			t.Errorf("EpisodeName(%q, %q) = %q, want %q", c.title, c.ep, got, c.want)
+		}
+	}
+}
+
 func TestEpisodeDetection(t *testing.T) {
 	cases := map[string]int{
 		"Демон / Гоблин 12 серия": 12, "Episode 7": 7, "3-я серия": 3, "EP 05": 5, "Серия 10": 10,

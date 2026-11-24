@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	xhtml "golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -411,6 +412,30 @@ func seasonNumber(label string) int {
 		return n
 	}
 	return 0
+}
+
+// EpisodeName combines a show title with an episode label for file names:
+// "Серия 1" becomes "<title> - Серия 1", while a label that already names the
+// show ("Show 2 серия") is kept as is.
+func EpisodeName(title, episode string) string {
+	title, episode = strings.TrimSpace(title), strings.TrimSpace(episode)
+	if episode == "" {
+		return title
+	}
+	if title == "" {
+		return episode
+	}
+	core := episodeGroup(episode)
+	letters := 0
+	for _, r := range core {
+		if unicode.IsLetter(r) {
+			letters++
+		}
+	}
+	if letters >= 3 && strings.Contains(strings.ToLower(title), core) {
+		return episode
+	}
+	return title + " - " + episode
 }
 
 // episodeGroup strips numbers and episode words so that links belonging to

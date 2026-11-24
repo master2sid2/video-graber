@@ -256,11 +256,7 @@ func (s *Server) handleCreateJobs(w http.ResponseWriter, r *http.Request) {
 			Title: m.Title, Subtitle: strings.Join(nonEmpty(episode, translation), " · "), Thumbnail: m.Thumbnail,
 			PageURL: m.PageURL, Mode: req.Mode, Output: out, Owner: ownerOf(r), Cookies: ms.cookies,
 		}
-		base := m.Title
-		if episode != "" {
-			base = episode
-		}
-		j.Filename = jobs.SafeFilename(base, translation) + "." + ct.Ext
+		j.Filename = jobs.SafeFilename(extract.EpisodeName(m.Title, episode), translation) + "." + ct.Ext
 		j.Prepare = func(ctx context.Context) (*media.Plan, error) {
 			ctx, cancel := context.WithTimeout(ctx, s.cfg.ExtractTimeout)
 			defer cancel()
