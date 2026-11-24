@@ -26,9 +26,13 @@ export function cookiesCard({ endpoint, title, intro }) {
     fallback.textContent = notes.join(' · ');
     fallback.hidden = !notes.length;
   };
-  get(endpoint).then(draw).catch((e) => toast(e.message, 'error'));
+  const card = h('section', { class: 'card' });
+  get(endpoint).then((info) => {
+    if (info.scope === 'server') { mount(card, ...serverCookies(title, info)); return; }
+    draw(info);
+  }).catch((e) => toast(e.message, 'error'));
 
-  return h('section', { class: 'card' },
+  mount(card,
     h('div', { class: 'card__head' }, h('h2', { class: 'card__title grow' }, title), status),
     h('div', { class: 'card__body' },
       h('p', { class: 'muted', style: { margin: '0' } }, intro),
@@ -47,6 +51,22 @@ export function cookiesCard({ endpoint, title, intro }) {
           toast(t('cookies.saved'), 'ok');
         } catch (e) { toast(e.message, 'error'); }
       } }, icon('check'), t('common.save'))));
+  return card;
+}
+
+// Shared mode: cookies come only from the server's -cookies-file and are
+// shown read-only — anonymous visitors must not be able to set or replace
+// the account every download runs under.
+function serverCookies(title, info) {
+  return [
+    h('div', { class: 'card__head' }, h('h2', { class: 'card__title grow' }, title),
+      h('span', { class: ['tag', info.present && 'tag--ok'] }, info.present ? t('cookies.loaded', { count: info.count, domains: info.domains }) : t('cookies.none'))),
+    h('div', { class: 'card__body' },
+      h('p', { class: 'muted', style: { margin: '0' } }, t('cookies.sharedIntro')),
+      h('p', { style: { margin: '0' } }, info.file_configured ? t('cookies.sharedFile') : t('cookies.sharedNoFile')),
+      h('pre', { class: 'code', style: { height: 'auto', padding: '10px', whiteSpace: 'pre-wrap' } }, h('span', null, '-cookies-file /etc/videograber/cookies.txt')),
+      h('p', { class: 'hint', style: { margin: '0' } }, t('cookies.sharedWarning'))),
+  ];
 }
 
 function defaultsCard() {
@@ -93,7 +113,7 @@ export async function render(root) {
   const s = state.status;
   const cards = [];
   if (s.features.cookies) {
-    cards.push(cookiesCard({ endpoint: '/api/cookies', title: t('cookies.title'), intro: isIndividual() ? t('cookies.introUser') : t('cookies.introShared') }));
+    cards.push(cookiesCard({ endpoint: '/api/cookies', title: t('cookies.title'), intro: t('cookies.introUser') }));
   }
   cards.push(defaultsCard());
   cards.push(aboutCard(cards.length % 2 === 0));

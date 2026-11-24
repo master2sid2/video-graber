@@ -133,12 +133,25 @@ Send `SIGHUP` after rotating to reopen all log files.
 
 ### YouTube on cloud servers
 
-YouTube frequently refuses requests from datacenter IPs. Export cookies of a
-signed-in session (private window, Netscape `cookies.txt` format) and upload
-them under **Settings → YouTube cookies**. In individual mode every user has
-their own cookies; administrators can also set global cookies used as a
-fallback. `-cookies-file` provides a server-wide default. Each yt-dlp call
+YouTube frequently refuses requests from datacenter IPs. Cookies of a
+signed-in session (exported from a private window in the Netscape
+`cookies.txt` format) help:
+
+* **Individual mode** — every user uploads their own cookies under
+  **Settings → YouTube cookies**; they are used only for that user's
+  downloads. Administrators can add global cookies (Admin → Global cookies)
+  used by users without their own.
+* **Shared mode** — cookies **cannot** be uploaded through the UI: without
+  accounts anybody could replace them, and every visitor would download as
+  that account. Only the server administrator can provide them with
+  `-cookies-file`; the UI shows a read-only status. Use a dedicated YouTube
+  account for this, never a personal one. Cookies uploaded through the
+  shared UI by older versions are deleted at startup.
+
+`-cookies-file` is also the fallback in individual mode. Each yt-dlp call
 works on a private temporary copy, because yt-dlp rewrites cookie files.
+Cookie values are never sent back to the browser — the UI only shows how
+many cookies and domains are stored.
 
 ## Security notes
 

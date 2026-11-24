@@ -124,6 +124,7 @@ func run() error {
 		Log: log, AccessSink: accessSink, Web: webFS, Version: version,
 	})
 	jm.OnFinish = srv.OnJobFinished
+	srv.PurgeSharedCookies(ctx)
 	jm.Store = jobStore{st}
 	if err := jm.Restore(); err != nil {
 		log.Warn("cannot restore the job queue", "err", err)

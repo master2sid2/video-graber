@@ -214,7 +214,10 @@ export default {
 
   'cookies.title': 'YouTube cookies',
   'cookies.introUser': 'YouTube often blocks downloads from cloud and datacenter IPs. Your cookies from a signed-in browser are passed to yt-dlp for your downloads only.',
-  'cookies.introShared': 'YouTube often blocks downloads from cloud and datacenter IPs. These cookies are passed to yt-dlp for every download on this instance.',
+  'cookies.sharedIntro': 'YouTube often blocks downloads from cloud and datacenter IPs; cookies of a signed-in account help. In shared mode there are no accounts, so cookies cannot be uploaded here: anybody could replace them, and every visitor would download as that account.',
+  'cookies.sharedFile': 'The server administrator has configured a cookies file. It is used for every YouTube download on this instance.',
+  'cookies.sharedNoFile': 'No cookies are configured. The server administrator can add a cookies file at startup:',
+  'cookies.sharedWarning': 'Use a separate YouTube account for this — never your personal one: all visitors download through it. For personal cookies run VideoGraber in individual mode, where every user keeps their own.',
   'cookies.loaded': '{count} cookies · {domains} domains',
   'cookies.none': 'not set',
   'cookies.fallbackOn': 'Global cookies are used while you have none.',
