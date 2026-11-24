@@ -260,7 +260,7 @@ body.is-recording .brand__rec { background: var(--accent); animation: blink 1.2s
   display: grid; gap: var(--gap);
   grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 1fr);
 }
-.grab-tabs { display: none; }
+.tabs.grab-tabs { display: none; } /* mobile only: desktop shows all three columns */
 
 /* Media column */
 .media-info { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; flex: none; }
@@ -467,7 +467,7 @@ body.is-recording .brand__rec { background: var(--accent); animation: blink 1.2s
   .urlbar { grid-template-columns: 1fr; }
   .urlbar .btn { width: 100%; }
 
-  .grab-tabs { display: flex; position: sticky; top: 0; z-index: 5; }
+  .tabs.grab-tabs { display: flex; position: sticky; top: 0; z-index: 5; }
   .grab-tabs button { flex: 1; }
   .grab-grid { display: block; }
   .grab-grid > .card { display: none; }
@@ -513,3 +513,25 @@ body.is-recording .brand__rec { background: var(--accent); animation: blink 1.2s
 @media (max-width: 900px) {
   .grab-grid.is-loading > .card:first-child { display: flex; }
 }
+
+/* Account block links to the profile */
+.account__link { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 4px 6px; margin: -4px -6px; border-radius: var(--r); color: inherit; text-decoration: none !important; }
+a.account__link:hover, .account__link.is-active { background: var(--elev); }
+.nav a.m-only { display: none; }
+@media (max-width: 900px) { .nav a.m-only { display: flex; } }
+
+/* Profile */
+.profile { display: flex; align-items: center; gap: 16px; }
+.avatar--lg { width: 56px; height: 56px; font-size: 18px; }
+.profile__name { margin-bottom: 6px; font: 700 18px/1.2 var(--display); overflow-wrap: anywhere; }
+.tiles--profile { grid-auto-rows: auto; align-content: start; }
+
+/* Never let long text widen cards, modals or progress bars */
+.card__body > *, .prog-list > *, .prog > * { min-width: 0; max-width: 100%; }
+.prog__head { display: grid; gap: 3px; }
+.prog__title { font-weight: 700; font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.prog__sub { color: var(--text-2); font-size: 13px; overflow-wrap: anywhere; }
+.prog__file { color: var(--muted); font-size: 11.5px; line-height: 1.4; overflow-wrap: anywhere; word-break: break-word; }
+.prog__name { margin-bottom: 6px; font-size: 13px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.prog__top > .led { min-width: 0; white-space: normal; }
+.job__err { overflow-wrap: anywhere; }

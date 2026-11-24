@@ -38,7 +38,7 @@ export function openProgress({ create, navigate, mode }) {
     mount(list, jobs.map((j) => {
       const block = progressBlock();
       const row = h('div', null,
-        single ? null : h('div', { class: 'small ellipsis', style: { marginBottom: '6px' } }, j.subtitle || j.title),
+        single ? null : h('div', { class: 'prog__name' }, j.subtitle || j.title),
         block.el);
       rows.set(j.id, block);
       block.update(j);
@@ -46,7 +46,10 @@ export function openProgress({ create, navigate, mode }) {
     }));
     if (single) {
       const j = jobs[0];
-      list.prepend(h('div', null, h('div', { class: 'job__title ellipsis' }, j.title), h('div', { class: 'job__sub ellipsis' }, j.subtitle ? `${j.subtitle} · ${j.filename}` : j.filename)));
+      list.prepend(h('div', { class: 'prog__head' },
+        h('div', { class: 'prog__title' }, j.title),
+        j.subtitle ? h('div', { class: 'prog__sub' }, j.subtitle) : null,
+        h('div', { class: 'prog__file mono' }, j.filename)));
     }
 
     const refresh = () => {

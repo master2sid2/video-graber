@@ -72,25 +72,6 @@ function defaultsCard() {
       h('button', { class: 'btn btn--sel btn--sm', onclick: async () => { await savePrefs(p); toast(t('settings.savedDefaults'), 'ok'); } }, icon('check'), t('common.save'))));
 }
 
-function accountCard() {
-  const cur = h('input', { class: 'input', type: 'password', autocomplete: 'current-password', required: true });
-  const nw = h('input', { class: 'input', type: 'password', autocomplete: 'new-password', required: true, minlength: 8 });
-  const nw2 = h('input', { class: 'input', type: 'password', autocomplete: 'new-password', required: true, minlength: 8 });
-  const form = h('form', { class: 'card', onsubmit: async (e) => {
-    e.preventDefault();
-    if (nw.value !== nw2.value) { toast(t('auth.mismatch'), 'error'); return; }
-    try {
-      await put('/api/me/password', { current: cur.value, new: nw.value });
-      form.reset();
-      toast(t('settings.passwordChanged'), 'ok');
-    } catch (err) { toast(err.message, 'error'); }
-  } },
-  h('div', { class: 'card__head' }, h('h2', { class: 'card__title grow' }, t('settings.account')), h('span', { class: 'tag' }, user().username)),
-  h('div', { class: 'card__body' }, field(t('settings.currentPassword'), cur), h('div', { class: 'grid2' }, field(t('settings.newPassword'), nw), field(t('auth.confirm'), nw2))),
-  h('div', { class: 'card__foot' }, h('span', { class: 'grow' }), h('button', { class: 'btn btn--sel btn--sm', type: 'submit' }, t('settings.changePassword'))));
-  return form;
-}
-
 function aboutCard(span) {
   const s = state.status;
   const yesno = (b) => h('span', { class: ['tag', b && 'tag--ok'] }, b ? t('common.on') : t('common.off'));
@@ -114,7 +95,6 @@ export async function render(root) {
     cards.push(cookiesCard({ endpoint: '/api/cookies', title: t('cookies.title'), intro: isIndividual() ? t('cookies.introUser') : t('cookies.introShared') }));
   }
   cards.push(defaultsCard());
-  if (isIndividual() && user()) cards.push(accountCard());
   cards.push(aboutCard(cards.length % 2 === 0));
   mount(root,
     h('div', { class: 'vhead' }, h('h1', null, t('settings.title'))),

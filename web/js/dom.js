@@ -69,6 +69,7 @@ const ICONS = {
   stop: 'M6 6h12v12H6z',
   bolt: 'M13 2L4 14h7l-1 8 9-12h-7z',
   file: 'M14 3H6v18h12V7zM14 3v4h4',
+  user: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0',
 };
 
 export function icon(name, cls = '') {

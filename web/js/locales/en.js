@@ -22,11 +22,13 @@ export default {
   'nav.library': 'Library',
   'nav.settings': 'Settings',
   'nav.admin': 'Admin',
+  'nav.profile': 'Profile',
 
   'account.guest': 'Guest',
   'account.admin': 'Administrator',
   'account.member': 'Member',
   'account.logout': 'Sign out',
+  'account.openProfile': 'Open your profile',
   'account.sharedMode': 'Shared mode',
   'account.sessionExpired': 'Your session has expired. Please sign in again.',
 
@@ -213,6 +215,16 @@ export default {
   'cookies.saved': 'Cookies saved.',
   'cookies.removed': 'Cookies removed.',
 
+  'profile.title': 'Profile',
+  'profile.account': 'Account',
+  'profile.created': 'Member since',
+  'profile.lastLogin': 'Last sign-in',
+  'profile.toSettings': 'Settings & cookies',
+  'profile.toLibrary': 'My library',
+  'profile.password': 'Change password',
+  'profile.passwordIntro': 'After the change every other device is signed out.',
+  'profile.passwordRule': 'At least 8 characters.',
+
   'settings.title': 'Settings',
   'settings.defaults': 'Default output',
   'settings.defaultsAccount': 'Prefills the output column. Stored in your account.',
@@ -220,7 +232,6 @@ export default {
   'settings.audioContainer': 'Audio container',
   'settings.savedDefaults': 'Defaults saved.',
   'settings.language': 'Language',
-  'settings.account': 'Account',
   'settings.currentPassword': 'Current password',
   'settings.newPassword': 'New password',
   'settings.changePassword': 'Change password',

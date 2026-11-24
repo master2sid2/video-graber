@@ -10,6 +10,7 @@ import * as library from './views/library.js';
 import * as settings from './views/settings.js';
 import * as admin from './views/admin.js';
 import * as authViews from './views/auth.js';
+import * as profile from './views/profile.js';
 
 const routes = {
   grab: { view: grab, nav: 'nav.grab', icon: 'grab' },
@@ -17,6 +18,8 @@ const routes = {
   library: { view: library, nav: 'nav.library', icon: 'library', individual: true },
   settings: { view: settings, nav: 'nav.settings', icon: 'settings' },
   admin: { view: admin, nav: 'nav.admin', icon: 'admin', admin: true },
+  // Reached from the account block (desktop) or the last tab (mobile).
+  profile: { view: profile, nav: 'nav.profile', icon: 'user', individual: true, mobileOnly: true },
   login: { view: authViews.login, public: true },
   setup: { view: authViews.setup, public: true },
   register: { view: authViews.register, public: true },
@@ -53,16 +56,19 @@ function renderNav(active) {
   const n = activeCount();
   mount(document.getElementById('nav'), Object.entries(routes)
     .filter(([name, r]) => r.nav && allowed(name))
-    .map(([name, r]) => h('a', { href: `#/${name}`, title: t(r.nav), aria: active === name ? { current: 'page' } : null },
+    .map(([name, r]) => h('a', { href: `#/${name}`, class: r.mobileOnly ? 'm-only' : null, title: t(r.nav), aria: active === name ? { current: 'page' } : null },
       icon(r.icon), h('span', null, t(r.nav)),
       name === 'queue' && n ? h('span', { class: 'badge' }, String(n)) : null)));
 
   const u = user();
-  mount(document.getElementById('account'), h('div', { class: 'account' },
+  const who = [
     h('span', { class: 'avatar', aria: { hidden: 'true' } }, u ? u.username.slice(0, 2).toUpperCase() : '··'),
     h('div', { class: 'account__info grow' },
       h('div', { class: 'account__name ellipsis' }, u ? u.username : t('account.guest')),
       h('div', { class: 'account__role' }, u ? (u.is_admin ? t('account.admin') : t('account.member')) : t('account.sharedMode'))),
+  ];
+  mount(document.getElementById('account'), h('div', { class: 'account' },
+    u ? h('a', { class: ['account__link', active === 'profile' && 'is-active'], href: '#/profile', title: t('account.openProfile') }, who) : h('div', { class: 'account__link' }, who),
     u ? h('button', { class: 'btn btn--ghost btn--icon btn--sm', title: t('account.logout'), aria: { label: t('account.logout') }, onclick: logout }, icon('logout')) : null));
   renderActivity();
 }
