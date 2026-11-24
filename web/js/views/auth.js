@@ -3,13 +3,14 @@
 import { t } from '../i18n.js';
 import { h, mount, field } from '../dom.js';
 import { get, post } from '../api.js';
-import { loadStatus, loadPrefs } from '../state.js';
+import { state, loadStatus, loadPrefs } from '../state.js';
 
 function shell(root, title, lead, content) {
   mount(root, h('div', { class: 'auth' }, h('div', { class: 'auth__card' },
     h('div', { class: 'auth__brand' }, h('span', { class: 'brand' }, h('span', { class: 'brand__rec' }), h('span', { class: 'brand__word' }, 'Video', h('b', null, 'Graber')))),
     h('div', { class: 'card' }, h('div', { class: 'card__body', style: { padding: '24px' } },
-      h('div', null, h('h1', null, title), h('p', { class: 'lead' }, lead)), content)))));
+      h('div', null, h('h1', null, title), h('p', { class: 'lead' }, lead)), content)),
+    h('p', { class: 'auth__version' }, t('auth.version', { version: state.status?.version || '?' })))));
 }
 
 function authForm({ fields, submitLabel, onSubmit }) {

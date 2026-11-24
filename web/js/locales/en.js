@@ -319,4 +319,5 @@ export default {
   'auth.registerSubmit': 'Create account',
   'auth.inviteInvalid': 'This invite link is invalid, used up or expired. Ask the administrator for a new one.',
   'auth.toLogin': 'Go to sign in',
+  'auth.version': 'VideoGraber {version}',
 };

@@ -58,6 +58,11 @@ go build -o videograber ./cmd/videograber
 
 Open `http://localhost:8080`.
 
+The version is shown on the sign-in page and in Settings → About. Release
+builds set it with `go build -ldflags "-X main.version=1.2.3" ./cmd/videograber`;
+other builds report `dev-<git commit>` (`-dirty` when built with uncommitted
+changes).
+
 ### First run in individual mode
 
 When no account exists, a one-time **setup token** is written to the

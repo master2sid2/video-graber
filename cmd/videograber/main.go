@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -27,7 +28,39 @@ import (
 	"videograber/web"
 )
 
+// version is set at build time: go build -ldflags "-X main.version=1.2.3".
 var version = "dev"
+
+// fullVersion appends the VCS revision Go embeds in the binary to dev builds.
+func fullVersion() string {
+	if version != "dev" {
+		return version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return version
+	}
+	var rev string
+	var dirty bool
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		}
+	}
+	if len(rev) > 7 {
+		rev = rev[:7]
+	}
+	if rev == "" {
+		return version
+	}
+	if dirty {
+		rev += "-dirty"
+	}
+	return version + "-" + rev
+}
 
 func main() {
 	if err := run(); err != nil {
@@ -37,6 +70,7 @@ func main() {
 }
 
 func run() error {
+	version = fullVersion()
 	args := os.Args[1:]
 	debugExtract := len(args) > 0 && args[0] == "extract"
 	if debugExtract {
