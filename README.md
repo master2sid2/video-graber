@@ -103,7 +103,7 @@ name in upper case with dashes replaced by underscores (`-max-jobs` →
 | `-chrome` | disabled | Chrome/Chromium path or `auto` |
 | `-browser-timeout` | `30s` | how long the headless browser waits for media |
 | `-proxy` | – | proxy for page requests, yt-dlp, ffmpeg and Chrome |
-| `-report-url` | – | link shown for unsupported sites (`https://…` or `mailto:…`; `{url}` is replaced with the page URL) |
+| `-report-url` | GitHub issue | link shown for unsupported sites (`https://…` or `mailto:…`; `{url}`, `{title}`, `{body}` are replaced; `off` hides it). Default: a prefilled issue in [master2sid2/video-graber](https://github.com/master2sid2/video-graber/issues) |
 | `-user-agent` | Chrome UA | User-Agent of outgoing requests |
 | `-max-jobs` | `2` | concurrent ffmpeg jobs |
 | `-temp-ttl` | `1h` | delete prepared files that were not downloaded |
@@ -203,7 +203,10 @@ Every URL goes through the same pipeline:
 4. **yt-dlp** as the last fallback.
 
 If nothing matches, the user sees "This site is not supported yet" with the
-list of tried modules and a button to report the link (`-report-url`).
+list of tried modules and a "Report on GitHub" button that opens a new issue
+in [master2sid2/video-graber](https://github.com/master2sid2/video-graber/issues)
+prefilled with the page URL, the tried modules, the version and the error
+details (configurable with `-report-url`).
 The detected modules are shown under the title of every grabbed page.
 
 ### Adding an analysis module

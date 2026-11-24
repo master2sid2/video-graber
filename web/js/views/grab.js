@@ -205,8 +205,7 @@ function renderFailure(err) {
       h('h3', null, t('grab.failed')), h('p', null, err.message))));
     return;
   }
-  const report = state.status.report_url;
-  const reportHref = report ? report.replaceAll('{url}', encodeURIComponent(session.url)) : '';
+  const reportHref = reportLink(state.status.report_url, data);
   const actions = h('div', { class: 'row', style: { justifyContent: 'center' } });
   if (reportHref) {
     actions.append(h('a', { class: 'btn btn--primary', href: reportHref, target: '_blank', rel: 'noopener noreferrer' }, icon('link'), t('grab.report')));
@@ -232,6 +231,37 @@ function renderFailure(err) {
       e.currentTarget.textContent = detailOpen.v ? t('grab.hideDetails') : t('grab.showDetails');
     } }, t('grab.showDetails')) : null,
     detail)));
+}
+
+// Build the "report unsupported site" link (a prefilled GitHub issue by
+// default): {url}, {title} and {body} are replaced in the configured template.
+function reportLink(template, data) {
+  if (!template) return '';
+  let host = session.url;
+  try { host = new URL(session.url).hostname; } catch { /* keep raw */ }
+  const detail = String(data.detail || '').slice(0, 1500);
+  const title = `Unsupported site: ${host}`;
+  const body = [
+    '### Unsupported site',
+    '',
+    `**Page:** ${session.url}`,
+    `**Extractor mode:** ${session.extractor || 'auto'}`,
+    `**Modules tried:** ${(data.tried || []).join(', ') || '—'}`,
+    `**VideoGraber version:** ${state.status.version || 'unknown'}`,
+    '',
+    '**What did you expect?** (episodes, voice-overs, a single video…)',
+    '',
+    '<details><summary>Technical details</summary>',
+    '',
+    '```',
+    detail || '—',
+    '```',
+    '</details>',
+  ].join('\n');
+  return template
+    .replaceAll('{url}', encodeURIComponent(session.url))
+    .replaceAll('{title}', encodeURIComponent(title))
+    .replaceAll('{body}', encodeURIComponent(body));
 }
 
 function seasonOf(media, epID) {

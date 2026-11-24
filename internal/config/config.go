@@ -22,6 +22,10 @@ const (
 	ModeIndividual Mode = "individual"
 )
 
+// DefaultReportURL opens a prefilled GitHub issue for unsupported sites.
+// {title}, {body} and {url} are replaced by the web UI (URL-encoded).
+const DefaultReportURL = "https://github.com/master2sid2/video-graber/issues/new?title={title}&body={body}"
+
 // DefaultUserAgent is used for outgoing HTTP requests unless overridden.
 const DefaultUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
@@ -128,7 +132,7 @@ func Parse(args []string) (*Config, error) {
 
 	fs.StringVar(&c.CookiesFile, "cookies-file", envOr("cookies-file", ""), "global Netscape cookies.txt passed to yt-dlp")
 	fs.StringVar(&c.Proxy, "proxy", envOr("proxy", ""), "HTTP(S)/SOCKS proxy for outgoing requests, yt-dlp and ffmpeg")
-	fs.StringVar(&c.ReportURL, "report-url", envOr("report-url", ""), "where users report unsupported sites (URL or mailto:, {url} is replaced with the page URL)")
+	fs.StringVar(&c.ReportURL, "report-url", envOr("report-url", DefaultReportURL), "where users report unsupported sites (URL or mailto:; {url}, {title}, {body} are replaced; \"off\" hides the button)")
 	fs.StringVar(&c.UserAgent, "user-agent", envOr("user-agent", DefaultUserAgent), "User-Agent for outgoing requests")
 
 	fs.IntVar(&c.MaxJobs, "max-jobs", envInt("max-jobs", 2), "max concurrent ffmpeg jobs")
@@ -158,6 +162,9 @@ func Parse(args []string) (*Config, error) {
 	c.Mode = Mode(strings.ToLower(mode))
 	if c.Mode != ModeShared && c.Mode != ModeIndividual {
 		return nil, fmt.Errorf("invalid -mode %q: want shared or individual", mode)
+	}
+	if strings.EqualFold(c.ReportURL, "off") || strings.EqualFold(c.ReportURL, "none") {
+		c.ReportURL = ""
 	}
 	c.YtDlpArgs = strings.Fields(ytArgs)
 	for h := range strings.SplitSeq(ytHosts, ",") {
