@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"videograber/internal/netx"
+	"github.com/master2sid2/video-graber/internal/netx"
 )
 
 // TestLive runs the engine against a real page: VG_LIVE=<url> go test -run TestLive -v
@@ -33,7 +33,9 @@ func TestLive(t *testing.T) {
 	t.Log(string(out))
 	if sel := os.Getenv("VG_LIVE_SEL"); sel != "" {
 		var s Selection
-		json.Unmarshal([]byte(sel), &s)
+		if err := json.Unmarshal([]byte(sel), &s); err != nil {
+			t.Fatal(err)
+		}
 		st2, err := res.Resolve(t.Context(), s)
 		if err != nil {
 			t.Fatal(err)

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"videograber/internal/media"
+	"github.com/master2sid2/video-graber/internal/media"
 )
 
 type memStore struct {

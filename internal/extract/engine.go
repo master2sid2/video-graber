@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"videograber/internal/netx"
+	"github.com/master2sid2/video-graber/internal/netx"
 )
 
 // Engine chooses and runs extractors.

@@ -59,14 +59,19 @@ func (y *YtDlp) cookiesTemp(cookies string) (string, func(), error) {
 	if err != nil {
 		return "", nil, err
 	}
+	var data []byte
 	if !bytes.HasPrefix(bytes.TrimSpace(src), []byte("# ")) {
 		// yt-dlp requires the Netscape header line.
-		f.WriteString("# Netscape HTTP Cookie File\n")
+		data = append(data, "# Netscape HTTP Cookie File\n"...)
 	}
-	f.Write(src)
-	f.Close()
+	data = append(data, src...)
+	_, werr := f.Write(data)
 	name := f.Name()
-	return name, func() { os.Remove(name) }, nil
+	if err := errors.Join(werr, f.Close()); err != nil {
+		_ = os.Remove(name)
+		return "", nil, err
+	}
+	return name, func() { _ = os.Remove(name) }, nil
 }
 
 // BaseArgs returns arguments shared by all yt-dlp invocations.

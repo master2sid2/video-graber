@@ -139,11 +139,11 @@ func (s *Store) migrate(ctx context.Context) error {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, migrations[i]); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return fmt.Errorf("migration %d: %w", i+1, err)
 		}
 		if _, err := tx.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", i+1)); err != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			return err
 		}
 		if err := tx.Commit(); err != nil {

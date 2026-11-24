@@ -99,7 +99,7 @@ func (s *Store) RegisterWithInvite(ctx context.Context, code, username, password
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }() // no-op after Commit
 	inv, err := scanInvite(tx.QueryRowContext(ctx, "SELECT "+inviteCols+" FROM invites WHERE code = ?", code))
 	if err != nil {
 		return nil, err

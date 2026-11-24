@@ -1,0 +1,33 @@
+# Release builds for GitHub, run by .github/workflows/release.yml on a v* tag.
+version: 2
+
+project_name: videograber
+
+builds:
+  - main: ./cmd/videograber
+    env:
+      - CGO_ENABLED=0 # pure Go, SQLite included
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      # The tag, with its "v": the UI shows it as-is.
+      - -X main.version={{ .Tag }}
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [binary]
+    name_template: "{{ .ProjectName }}-v{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+
+checksum:
+  name_template: SHA256SUMS
+
+# The release notes are the CHANGELOG.md section of the tag (see release.yml);
+# do not disable the changelog pipe: it is also what applies --release-notes.
+
+release:
+  footer: |
+    ### Install
+    Download the binary for your platform, check it against `SHA256SUMS`, make it executable and run `videograber`, or run `go install github.com/master2sid2/video-graber/cmd/videograber@{{ .Tag }}`. ffmpeg is required, yt-dlp is optional; see the README.

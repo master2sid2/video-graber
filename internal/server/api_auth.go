@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"videograber/internal/auth"
-	"videograber/internal/store"
+	"github.com/master2sid2/video-graber/internal/auth"
+	"github.com/master2sid2/video-graber/internal/store"
 )
 
 type statusResponse struct {
@@ -295,7 +295,7 @@ func (s *Server) handleGetPrefs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Write([]byte(prefs))
+	_, _ = w.Write([]byte(prefs))
 }
 
 func (s *Server) handlePutPrefs(w http.ResponseWriter, r *http.Request) {

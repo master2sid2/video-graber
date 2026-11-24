@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"videograber/internal/extract"
+	"github.com/master2sid2/video-graber/internal/extract"
 )
 
 // Progress is a snapshot reported while ffmpeg runs.
@@ -254,7 +254,7 @@ func (r *Runner) Run(ctx context.Context, p *Plan, cookies string, w io.Writer, 
 	defer func() {
 		cancel()
 		for _, pd := range producers {
-			pd.cmd.Wait()
+			_ = pd.cmd.Wait() // only reaps the process; its failure was reported while reading
 			pd.cleanup()
 		}
 	}()

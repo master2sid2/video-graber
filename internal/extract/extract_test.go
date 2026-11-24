@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"videograber/internal/netx"
+	"github.com/master2sid2/video-graber/internal/netx"
 )
 
 func TestParseHLSMaster(t *testing.T) {
@@ -150,7 +150,7 @@ func TestGenericPageWithPlayers(t *testing.T) {
 	mux := http.NewServeMux()
 	var srv *httptest.Server
 	mux.HandleFunc("/show-1-seriya", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, `<html><head><meta property="og:title" content="Show"><meta property="og:image" content="/p.jpg"></head><body>
+		_, _ = io.WriteString(w, `<html><head><meta property="og:title" content="Show"><meta property="og:image" content="/p.jpg"></head><body>
 		<a href="/show-1-seriya" title="Show 1 серия">1</a><a href="/show-2-seriya" title="Show 2 серия">2</a>
 		<div><a data-url-player="//`+r.Host+`/player?v=a" aria-selected="true"><h3>Dub A</h3></a>
 		<a data-url-player="//`+r.Host+`/player?v=b"><h3>Dub B</h3></a></div>
@@ -162,13 +162,13 @@ func TestGenericPageWithPlayers(t *testing.T) {
 			return
 		}
 		v := r.URL.Query().Get("v")
-		io.WriteString(w, `<div data-config='{"hls":"`+strings.ReplaceAll(srv.URL, "/", `\/`)+`\/hls\/`+v+`\/index.m3u8"}'></div>`)
+		_, _ = io.WriteString(w, `<div data-config='{"hls":"`+strings.ReplaceAll(srv.URL, "/", `\/`)+`\/hls\/`+v+`\/index.m3u8"}'></div>`)
 	})
 	mux.HandleFunc("/hls/{v}/index.m3u8", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=1280x720\n720.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=640x360\n360.m3u8\n")
+		_, _ = io.WriteString(w, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=900000,RESOLUTION=1280x720\n720.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=400000,RESOLUTION=640x360\n360.m3u8\n")
 	})
 	mux.HandleFunc("/hls/{v}/720.m3u8", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "#EXTM3U\n#EXTINF:6,\n0.ts\n#EXTINF:6,\n1.ts\n#EXT-X-ENDLIST\n")
+		_, _ = io.WriteString(w, "#EXTM3U\n#EXTINF:6,\n0.ts\n#EXTINF:6,\n1.ts\n#EXT-X-ENDLIST\n")
 	})
 	srv = httptest.NewServer(mux)
 	defer srv.Close()

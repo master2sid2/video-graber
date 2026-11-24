@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"videograber/internal/extract"
+	"github.com/master2sid2/video-graber/internal/extract"
 )
 
 var testCaps = Capabilities{

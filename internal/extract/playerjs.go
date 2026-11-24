@@ -60,9 +60,10 @@ func readJSValue(s string) (string, bool) {
 		for i := 0; i < len(s); i++ {
 			c := s[i]
 			if inStr != 0 {
-				if c == '\\' {
+				switch c {
+				case '\\':
 					i++
-				} else if c == inStr {
+				case inStr:
 					inStr = 0
 				}
 				continue
@@ -235,7 +236,7 @@ func parseLabeledList(s string, base *url.URL) []labeled {
 	var parts []string
 	for part := range strings.SplitSeq(s, ",") {
 		p := strings.TrimSpace(part)
-		if len(parts) > 0 && !(strings.Contains(p, "//") || strings.HasPrefix(p, "/")) {
+		if len(parts) > 0 && !strings.Contains(p, "//") && !strings.HasPrefix(p, "/") {
 			parts[len(parts)-1] += "," + part // comma inside the previous URL
 			continue
 		}

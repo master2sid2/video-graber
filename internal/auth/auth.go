@@ -144,7 +144,7 @@ func ValidateUsername(s string) error {
 		return errors.New("username must be 3-32 characters long")
 	}
 	for _, r := range s {
-		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-' || r == '.') {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '-' && r != '.' {
 			return errors.New("username may contain only letters, digits, '.', '-' and '_'")
 		}
 	}

@@ -28,8 +28,8 @@ import (
 	"time"
 	"unicode"
 
-	"videograber/internal/auth"
-	"videograber/internal/media"
+	"github.com/master2sid2/video-graber/internal/auth"
+	"github.com/master2sid2/video-graber/internal/media"
 )
 
 // State of a job.

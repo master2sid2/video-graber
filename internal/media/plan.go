@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"videograber/internal/extract"
+	"github.com/master2sid2/video-graber/internal/extract"
 )
 
 // Output holds the user's conversion settings.
@@ -197,7 +197,7 @@ func BuildPlan(st *extract.Stream, p Pick, out Output, caps Capabilities) (*Plan
 		tracks = append(tracks, t)
 	}
 	if len(tracks) == 0 && (!f.HasAudio || p.AudioLang != "") {
-		if t := defaultAudio(st, f, p.AudioLang); t != nil && !(t.Embedded && f.HasAudio && p.AudioLang == "") {
+		if t := defaultAudio(st, f, p.AudioLang); t != nil && (!t.Embedded || !f.HasAudio || p.AudioLang != "") {
 			tracks = append(tracks, t)
 		}
 	}

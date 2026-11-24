@@ -14,14 +14,14 @@ import (
 	"sync"
 	"time"
 
-	"videograber/internal/auth"
-	"videograber/internal/config"
-	"videograber/internal/extract"
-	"videograber/internal/jobs"
-	"videograber/internal/logging"
-	"videograber/internal/media"
-	"videograber/internal/netx"
-	"videograber/internal/store"
+	"github.com/master2sid2/video-graber/internal/auth"
+	"github.com/master2sid2/video-graber/internal/config"
+	"github.com/master2sid2/video-graber/internal/extract"
+	"github.com/master2sid2/video-graber/internal/jobs"
+	"github.com/master2sid2/video-graber/internal/logging"
+	"github.com/master2sid2/video-graber/internal/media"
+	"github.com/master2sid2/video-graber/internal/netx"
+	"github.com/master2sid2/video-graber/internal/store"
 )
 
 const sessionCookie = "vg_session"
@@ -206,8 +206,14 @@ func (s *Server) staticHandler() http.Handler {
 			tag, ok := etags.Load(name)
 			if !ok {
 				h := sha256.New()
-				io.Copy(h, rs)
-				rs.Seek(0, io.SeekStart)
+				if _, err := io.Copy(h, rs); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				if _, err := rs.Seek(0, io.SeekStart); err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
 				tag = `"` + hex.EncodeToString(h.Sum(nil))[:20] + `"`
 				etags.Store(name, tag)
 			}

@@ -1,5 +1,10 @@
 # VideoGraber
 
+[![CI](https://github.com/master2sid2/video-graber/actions/workflows/ci.yml/badge.svg)](https://github.com/master2sid2/video-graber/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/master2sid2/video-graber)](https://github.com/master2sid2/video-graber/releases)
+[![Go](https://img.shields.io/github/go-mod/go-version/master2sid2/video-graber)](go.mod)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A self-hosted web application that finds videos on web pages — dorama / anime
 sites, embedded players, YouTube and hundreds of other sites — and downloads
 them, optionally converting them on the fly with ffmpeg.
@@ -28,6 +33,21 @@ them, optionally converting them on the fly with ffmpeg.
   text or JSON, reopened on `SIGHUP` for logrotate.
 * Plain HTML/CSS/ES-module UI without a build step, embedded into the binary.
 
+![VideoGraber: sign in, find the episodes of a show, download four of them as MKV, the queue, the library](docs/screenshots/demo.gif)
+
+*Recorded with made-up data: a local demo site with generated test videos on `shows.demo.test`.*
+
+<table>
+  <tr>
+    <td><a href="docs/screenshots/grab.png"><img src="docs/screenshots/grab.png" alt="Grab"></a></td>
+    <td><a href="docs/screenshots/queue.png"><img src="docs/screenshots/queue.png" alt="Queue"></a></td>
+  </tr>
+  <tr>
+    <td><a href="docs/screenshots/library.png"><img src="docs/screenshots/library.png" alt="Library"></a></td>
+    <td><a href="docs/screenshots/settings.png"><img src="docs/screenshots/settings.png" alt="Settings"></a></td>
+  </tr>
+</table>
+
 ## Requirements
 
 | Tool | Required | Purpose |
@@ -43,6 +63,18 @@ yourself and pass their paths (or keep them in `PATH`).
 > Recent yt-dlp versions need a JavaScript runtime such as
 > [Deno](https://deno.com/) for YouTube. See the yt-dlp documentation; extra
 > yt-dlp options can be passed with `-ytdlp-args`.
+
+## Download
+
+Binaries for Linux and macOS (amd64, arm64) are on the
+[releases page](https://github.com/master2sid2/video-graber/releases), with `SHA256SUMS`.
+Or install with Go 1.26+:
+
+```sh
+go install github.com/master2sid2/video-graber/cmd/videograber@latest
+```
+
+ffmpeg (with ffprobe) must be installed separately; yt-dlp and Chrome are optional (see above).
 
 ## Build and run
 
@@ -234,6 +266,10 @@ episode links, player tabs or iframes. Keep modules generic — one page
 Implement `extract.Extractor` (`Name`, `Match`, `Extract`) and register it in
 `extract.NewEngine` (`e.Specific`). Specific extractors are also used for
 embedded player iframes found by the generic extractor.
+
+## License
+
+[MIT](LICENSE).
 
 ## Third-party software
 

@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	"videograber/internal/auth"
-	"videograber/internal/extract"
-	"videograber/internal/jobs"
-	"videograber/internal/media"
-	"videograber/internal/store"
+	"github.com/master2sid2/video-graber/internal/auth"
+	"github.com/master2sid2/video-graber/internal/extract"
+	"github.com/master2sid2/video-graber/internal/jobs"
+	"github.com/master2sid2/video-graber/internal/media"
+	"github.com/master2sid2/video-graber/internal/store"
 )
 
 // mediaSession keeps an extraction result so that the UI can switch

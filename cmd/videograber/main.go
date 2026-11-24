@@ -17,15 +17,15 @@ import (
 	"syscall"
 	"time"
 
-	"videograber/internal/config"
-	"videograber/internal/extract"
-	"videograber/internal/jobs"
-	"videograber/internal/logging"
-	"videograber/internal/media"
-	"videograber/internal/netx"
-	"videograber/internal/server"
-	"videograber/internal/store"
-	"videograber/web"
+	"github.com/master2sid2/video-graber/internal/config"
+	"github.com/master2sid2/video-graber/internal/extract"
+	"github.com/master2sid2/video-graber/internal/jobs"
+	"github.com/master2sid2/video-graber/internal/logging"
+	"github.com/master2sid2/video-graber/internal/media"
+	"github.com/master2sid2/video-graber/internal/netx"
+	"github.com/master2sid2/video-graber/internal/server"
+	"github.com/master2sid2/video-graber/internal/store"
+	"github.com/master2sid2/video-graber/web"
 )
 
 // version is set at build time: go build -ldflags "-X main.version=1.2.3".
@@ -39,6 +39,11 @@ func fullVersion() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
 		return version
+	}
+	// "go install github.com/master2sid2/video-graber/cmd/videograber@v1.2.3"
+	// records the module version instead of VCS data.
+	if v := info.Main.Version; v != "" && v != "(devel)" {
+		return v
 	}
 	var rev string
 	var dirty bool

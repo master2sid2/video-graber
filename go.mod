@@ -1,4 +1,4 @@
-module videograber
+module github.com/master2sid2/video-graber
 
 go 1.26.1
 

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"videograber/internal/auth"
-	"videograber/internal/jobs"
-	"videograber/internal/store"
+	"github.com/master2sid2/video-graber/internal/auth"
+	"github.com/master2sid2/video-graber/internal/jobs"
+	"github.com/master2sid2/video-graber/internal/store"
 )
 
 var reColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)

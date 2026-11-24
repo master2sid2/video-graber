@@ -13,7 +13,7 @@ import (
 
 	"golang.org/x/text/encoding/charmap"
 
-	"videograber/internal/netx"
+	"github.com/master2sid2/video-graber/internal/netx"
 )
 
 func TestJSToJSON(t *testing.T) {
@@ -84,7 +84,7 @@ func TestLegacyCharsetAndUnsupported(t *testing.T) {
 	title, _ := charmap.Windows1251.NewEncoder().String("Магия")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=windows-1251")
-		io.WriteString(w, `<html><head><title>`+title+`</title></head><body>no video here</body></html>`)
+		_, _ = io.WriteString(w, `<html><head><title>`+title+`</title></head><body>no video here</body></html>`)
 	}))
 	defer srv.Close()
 

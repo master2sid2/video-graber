@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"videograber/internal/netx"
+	"github.com/master2sid2/video-graber/internal/netx"
 )
 
 // Generic extracts media from arbitrary pages using static HTML analysis,

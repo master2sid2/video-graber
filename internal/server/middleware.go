@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"videograber/internal/store"
+	"github.com/master2sid2/video-graber/internal/store"
 )
 
 type ctxKey int
@@ -102,7 +103,7 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 				status = http.StatusOK
 			}
 			if rec := recover(); rec != nil {
-				if rec != http.ErrAbortHandler {
+				if err, ok := rec.(error); !ok || !errors.Is(err, http.ErrAbortHandler) {
 					status = http.StatusInternalServerError
 				}
 				defer panic(rec)
@@ -115,7 +116,7 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 					"path": r.URL.RequestURI(), "proto": r.Proto, "status": status, "bytes": sw.bytes,
 					"duration_ms": dur.Milliseconds(), "referer": r.Referer(), "user_agent": r.UserAgent(),
 				})
-				s.accessSink.Write(append(line, '\n'))
+				_, _ = s.accessSink.Write(append(line, '\n'))
 				return
 			}
 			fmt.Fprintf(s.accessSink, "%s - %s [%s] \"%s %s %s\" %d %d \"%s\" \"%s\" %dms\n",
@@ -131,7 +132,7 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				if rec == http.ErrAbortHandler {
+				if err, ok := rec.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 					panic(rec)
 				}
 				s.log.Error("panic", "err", rec, "path", r.URL.Path, "stack", string(debug.Stack()))
