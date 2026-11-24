@@ -307,3 +307,49 @@ func (s *Store) ClearHistory(ctx context.Context, userID int64) error {
 	_, err := s.db.ExecContext(ctx, "DELETE FROM history WHERE user_id = ?", userID)
 	return err
 }
+
+// ---------- jobs ----------
+
+// StoredJob is a serialized job of the download queue.
+type StoredJob struct {
+	ID        string
+	Owner     int64
+	Data      []byte
+	UpdatedAt time.Time
+}
+
+// SaveJob inserts or replaces a job record.
+func (s *Store) SaveJob(ctx context.Context, j StoredJob) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO jobs(id, owner, data, updated_at) VALUES(?, ?, ?, ?)
+		 ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+		j.ID, j.Owner, string(j.Data), j.UpdatedAt.Unix())
+	return err
+}
+
+// DeleteJob removes a job record.
+func (s *Store) DeleteJob(ctx context.Context, id string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM jobs WHERE id = ?", id)
+	return err
+}
+
+// LoadJobs returns all stored jobs, oldest first.
+func (s *Store) LoadJobs(ctx context.Context) ([]StoredJob, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT id, owner, data, updated_at FROM jobs ORDER BY updated_at")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StoredJob
+	for rows.Next() {
+		var j StoredJob
+		var data string
+		var ts int64
+		if err := rows.Scan(&j.ID, &j.Owner, &data, &ts); err != nil {
+			return nil, err
+		}
+		j.Data, j.UpdatedAt = []byte(data), time.Unix(ts, 0)
+		out = append(out, j)
+	}
+	return out, rows.Err()
+}

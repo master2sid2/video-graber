@@ -126,6 +126,8 @@ export default {
   'grab.downloadN_other': 'Download {count} episodes',
   'grab.batchHint': 'Closest quality and the same voice-over for every episode.',
   'grab.preparing': 'Preparing…',
+  'grab.reanalysing': 'The analysis expired on the server — analysing the page again…',
+  'grab.expiredRetry': 'The analysis of this page had expired. The page is being analysed again — press Download once it is ready.',
 
   'job.dialogTitle': 'Preparing your video',
   'job.dialogTitleN': 'Preparing videos · {done} of {count} finished',

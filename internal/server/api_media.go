@@ -181,7 +181,7 @@ func friendlyError(err error) string {
 func (s *Server) handleResolve(w http.ResponseWriter, r *http.Request) {
 	ms, ok := s.session(r, r.PathValue("id"))
 	if !ok {
-		writeError(w, http.StatusNotFound, "this analysis has expired, please grab the URL again")
+		writeExpired(w)
 		return
 	}
 	var sel extract.Selection
@@ -218,7 +218,7 @@ func (s *Server) handleCreateJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	ms, ok := s.session(r, req.MediaID)
 	if !ok {
-		writeError(w, http.StatusNotFound, "this analysis has expired, please grab the URL again")
+		writeExpired(w)
 		return
 	}
 	if req.Mode != jobs.ModeFile {
@@ -390,4 +390,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// writeExpired reports a media session that no longer exists (expired or
+// lost on restart); the UI re-analyses the page and restores the selection.
+func writeExpired(w http.ResponseWriter) {
+	writeJSON(w, http.StatusNotFound, map[string]string{"error": "this analysis has expired, please grab the URL again", "code": "expired"})
 }

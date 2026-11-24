@@ -93,6 +93,16 @@ CREATE TABLE user_settings (
 	updated_at INTEGER NOT NULL
 );
 `,
+	// 2: persisted job queue
+	`
+CREATE TABLE jobs (
+	id         TEXT PRIMARY KEY,
+	owner      INTEGER NOT NULL DEFAULT 0,
+	data       TEXT NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+CREATE INDEX jobs_updated ON jobs(updated_at);
+`,
 }
 
 // Open opens (and migrates) the database inside dir.

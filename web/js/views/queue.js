@@ -8,7 +8,7 @@ import { post, del } from '../api.js';
 import { state, subscribe } from '../state.js';
 import { progressBlock, isFinished, isActive } from '../jobview.js';
 
-let filter = 'all';
+let filter = sessionStorage.getItem('vg.queue.filter') || 'all';
 
 export async function render(root) {
   const list = h('div', { class: 'jobs' });
@@ -18,7 +18,7 @@ export async function render(root) {
     { value: 'all', label: t('queue.all') },
     { value: 'active', label: t('queue.active') },
     { value: 'finished', label: t('queue.finished') },
-  ], filter, (v) => { filter = v; draw(); }, { label: t('queue.filter') });
+  ], filter, (v) => { filter = v; sessionStorage.setItem('vg.queue.filter', v); draw(); }, { label: t('queue.filter') });
   filters.style.width = 'auto';
 
   mount(root,
@@ -84,7 +84,7 @@ function jobRow(initial) {
     if (j.state === 'ready') {
       list.push(h('button', { class: 'btn btn--sel btn--sm', onclick: () => download(`/api/jobs/${j.id}/download`) }, icon('grab'), t('queue.save')));
     }
-    if (j.mode === 'stream' && ['pending', 'failed', 'canceled', 'done'].includes(j.state)) {
+    if (j.mode === 'stream' && j.restartable && ['pending', 'failed', 'canceled', 'done'].includes(j.state)) {
       list.push(h('button', { class: 'btn btn--sm', title: t('queue.restartHint'), onclick: () => download(`/api/jobs/${j.id}/download`) },
         icon(j.state === 'pending' ? 'play' : 'refresh'), j.state === 'pending' ? t('queue.start') : t('queue.again')));
     }
@@ -111,7 +111,7 @@ function jobRow(initial) {
       title.title = j.title || '';
       sub.textContent = j.subtitle ? `${j.subtitle} · ${j.filename}` : j.filename;
       sub.title = j.filename;
-      hint.hidden = j.state !== 'pending';
+      hint.hidden = j.state !== 'pending' || !j.restartable;
       prog.update(j);
       if (j.state !== lastState) {
         lastState = j.state;

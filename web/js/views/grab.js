@@ -48,7 +48,43 @@ function defaults() {
 
 let ui = null; // nodes of the current render
 
+// ── Persistence: the grab state survives page reloads (per tab, per user) ──
+
+const storageKey = () => `vg.grab.${user()?.id ?? 'shared'}`;
+let restoredFor = null;
+
+function persist() {
+  try {
+    sessionStorage.setItem(storageKey(), JSON.stringify({
+      v: 1, url: session.url, extractor: session.extractor, result: session.result, stream: session.stream,
+      selection: session.selection, marked: [...session.marked], multi: session.multi, season: session.season,
+      out: session.out ? { ...session.out, subtitles: [...session.out.subtitles] } : null,
+      advanced: session.advanced, tab: session.tab,
+    }));
+  } catch { /* storage full or disabled: not critical */ }
+}
+
+function restore() {
+  const key = storageKey();
+  if (restoredFor === key) return;
+  restoredFor = key;
+  let s = null;
+  try { s = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch { s = null; }
+  if (!s || s.v !== 1) return;
+  Object.assign(session, {
+    url: s.url || '', extractor: s.extractor || 'auto', result: s.result || null, stream: s.stream || null,
+    selection: s.selection || { translation: '', episode: '' }, marked: new Set(s.marked || []), multi: !!s.multi,
+    season: s.season || '', advanced: !!s.advanced, tab: s.tab || 'media',
+    out: s.out ? { ...defaults(), ...s.out, subtitles: new Set(s.out.subtitles || []) } : null,
+  });
+}
+
+window.addEventListener('pagehide', () => { if (session.result || session.url) persist(); });
+
+const isExpired = (err) => err?.status === 404 && err.data?.code === 'expired';
+
 export async function render(root, { query, navigate }) {
+  restore();
   session.out ||= defaults();
   const body = h('div', { class: 'vbody' });
   ui = { root, body, navigate };
@@ -89,7 +125,7 @@ function urlbar() {
   ui.grabBtn = btn;
   return h('form', { class: 'urlbar', onsubmit: (e) => { e.preventDefault(); session.url = input.value.trim(); runGrab(); } },
     h('div', { class: 'urlbar__input' }, icon('link'), input),
-    selectEl(extractors, session.extractor, (v) => { session.extractor = v; }, { aria: { label: t('grab.extractor') } }),
+    selectEl(extractors, session.extractor, (v) => { session.extractor = v; persist(); }, { aria: { label: t('grab.extractor') } }),
     btn);
 }
 
@@ -115,8 +151,9 @@ function renderLoading() {
     col([sk('30px'), sk('36px'), sk('36px'), sk('36px')])));
 }
 
-async function runGrab() {
+async function runGrab({ preserve = false } = {}) {
   if (!session.url || !ui) return;
+  const keep = preserve ? { selection: session.selection, out: session.out, multi: session.multi, marked: session.marked, tab: session.tab, advanced: session.advanced } : null;
   const btn = ui.grabBtn;
   btn.disabled = true;
   btn.replaceChildren(h('span', { class: 'spinner' }), h('span', null, t('grab.scanningShort')));
@@ -131,7 +168,26 @@ async function runGrab() {
     session.season = seasonOf(res.media, res.media.selected.episode);
     session.out = { ...defaults(), categoryId: session.out?.categoryId || '' };
     session.tab = 'media';
-    if (ui) renderResult();
+    let reselect = null;
+    if (keep) {
+      // Re-analysed after the server forgot the page: restore the user's choices.
+      const m = res.media;
+      const hasEp = (id) => m.episodes?.some((e) => e.id === id);
+      const hasTr = (id) => m.translations?.some((c) => c.id === id);
+      const sel = {
+        translation: hasTr(keep.selection.translation) ? keep.selection.translation : m.selected.translation,
+        episode: hasEp(keep.selection.episode) ? keep.selection.episode : m.selected.episode,
+      };
+      Object.assign(session, { out: keep.out, multi: keep.multi, tab: keep.tab, advanced: keep.advanced,
+        marked: new Set([...keep.marked].filter(hasEp)) });
+      session.season = seasonOf(m, sel.episode);
+      if (sel.translation !== m.selected.translation || sel.episode !== m.selected.episode) reselect = sel;
+    }
+    persist();
+    if (ui) {
+      renderResult();
+      if (reselect) select(reselect);
+    }
   } catch (err) {
     if (ui) renderFailure(err);
   } finally {
@@ -212,7 +268,7 @@ function renderResult() {
     for (const b of tabs.children) b.setAttribute('aria-selected', String(b.dataset.tab === name));
   };
   for (const name of ['media', 'source', 'output']) {
-    tabs.append(h('button', { type: 'button', role: 'tab', dataset: { tab: name }, onclick: () => { setTab(name); window.scrollTo({ top: 0 }); } }, t(`grab.${name}`)));
+    tabs.append(h('button', { type: 'button', role: 'tab', dataset: { tab: name }, onclick: () => { setTab(name); persist(); window.scrollTo({ top: 0 }); } }, t(`grab.${name}`)));
   }
   mount(ui.body, tabs, h('div', { class: 'grab-grid has-sticky' }, media.card, source.card, output.card));
   setTab(session.tab);
@@ -334,9 +390,16 @@ async function select(patch) {
     session.out.audio = '';
     session.out.subtitles = new Set();
     setResolving(false);
+    persist();
     if (ui) { renderSource(); renderOutput(); }
   } catch (err) {
     if (session.selection !== next) return;
+    if (isExpired(err)) {
+      toast(t('grab.reanalysing'), 'info');
+      setResolving(false);
+      runGrab({ preserve: true });
+      return;
+    }
     toast(err.message, 'error');
     session.selection = prev;
     setResolving(false);
@@ -509,9 +572,9 @@ function renderOutput() {
     if (!o.audioOnly) parts.push(h('div', { class: 'grid2' }, audioCodec(), audioBitrate()));
     if (reencode) {
       parts.push(h('div', { class: 'grid2' },
-        field(t('grab.crf'), h('input', { class: 'input mono', type: 'number', min: 0, max: 63, placeholder: t('grab.auto'), value: o.crf || '', oninput: (e) => { o.crf = Number(e.target.value) || 0; } })),
+        field(t('grab.crf'), h('input', { class: 'input mono', type: 'number', min: 0, max: 63, placeholder: t('grab.auto'), value: o.crf || '', oninput: (e) => { o.crf = Number(e.target.value) || 0; persist(); } })),
         ['h264', 'h265'].includes(o.videoCodec) || (o.videoCodec === 'copy' && o.height)
-          ? field(t('grab.preset'), selectEl([{ value: '', label: t('grab.auto') }, ...(caps().presets || []).map((p) => ({ value: p, label: p }))], o.preset, (v) => { o.preset = v; }))
+          ? field(t('grab.preset'), selectEl([{ value: '', label: t('grab.auto') }, ...(caps().presets || []).map((p) => ({ value: p, label: p }))], o.preset, (v) => { o.preset = v; persist(); }))
           : h('span')));
     }
     parts.push(h('div', { class: 'grid2' },
@@ -529,7 +592,7 @@ function renderOutput() {
   if (isIndividual() && user()) {
     const opts = [{ value: '', label: t('grab.noCategory') }, ...session.categories.map((c) => ({ value: c.id, label: c.name }))];
     if (!opts.some((x) => String(x.value) === String(o.categoryId))) o.categoryId = '';
-    parts.push(field(t('grab.category'), selectEl(opts, o.categoryId, (v) => { o.categoryId = v; })));
+    parts.push(field(t('grab.category'), selectEl(opts, o.categoryId, (v) => { o.categoryId = v; persist(); })));
   }
 
   keepScroll(col.body, () => mount(col.body, parts));
@@ -548,6 +611,7 @@ function selectedItems() {
 function renderFoot() {
   const foot = ui?.output?.foot;
   if (!foot) return;
+  persist();
   if (!session.stream?.formats?.length) { mount(foot); return; }
   const o = session.out;
   const ct = currentContainer();
@@ -605,17 +669,24 @@ function startDownload(btn) {
   // and the progress dialog opens right away.
   btn.disabled = true;
   btn.replaceChildren(h('span', { class: 'spinner' }), h('span', null, t('grab.preparing')));
-  const restore = () => { if (btn.isConnected) renderFoot(); };
+  const restoreBtn = () => { if (btn.isConnected) renderFoot(); };
   openProgress({
     mode: o.mode,
     navigate: ui.navigate,
     create: () => post('/api/jobs', body).then((res) => {
-      restore();
+      restoreBtn();
       savePrefs({
         container: o.container, audioContainer: o.audioContainer, videoCodec: o.videoCodec, height: o.height,
         audioBitrate: o.audioBitrate, mode: o.mode, categoryId: o.categoryId,
       });
       return res.jobs;
-    }, (err) => { restore(); throw err; }),
+    }, (err) => {
+      restoreBtn();
+      if (isExpired(err)) {
+        runGrab({ preserve: true });
+        throw new Error(t('grab.expiredRetry'));
+      }
+      throw err;
+    }),
   });
 }

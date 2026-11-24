@@ -124,6 +124,10 @@ func run() error {
 		Log: log, AccessSink: accessSink, Web: webFS, Version: version,
 	})
 	jm.OnFinish = srv.OnJobFinished
+	jm.Store = jobStore{st}
+	if err := jm.Restore(); err != nil {
+		log.Warn("cannot restore the job queue", "err", err)
+	}
 
 	if tok, err := srv.SetupToken(ctx); err != nil {
 		return err
@@ -217,4 +221,22 @@ func extractCommand(engine *extract.Engine, cfg *config.Config, args []string) e
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(map[string]any{"media": res.Media, "stream": st})
+}
+
+// jobStore adapts the database to jobs.Persister.
+type jobStore struct{ s *store.Store }
+
+func (j jobStore) SaveJob(r jobs.Record) error {
+	return j.s.SaveJob(context.Background(), store.StoredJob{ID: r.ID, Owner: r.Owner, Data: r.Data, UpdatedAt: r.UpdatedAt})
+}
+
+func (j jobStore) DeleteJob(id string) error { return j.s.DeleteJob(context.Background(), id) }
+
+func (j jobStore) LoadJobs() ([]jobs.Record, error) {
+	recs, err := j.s.LoadJobs(context.Background())
+	out := make([]jobs.Record, 0, len(recs))
+	for _, r := range recs {
+		out = append(out, jobs.Record{ID: r.ID, Owner: r.Owner, Data: r.Data, UpdatedAt: r.UpdatedAt})
+	}
+	return out, err
 }

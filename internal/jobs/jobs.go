@@ -12,6 +12,7 @@ package jobs
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -77,6 +78,9 @@ type Job struct {
 	Output    media.Output   `json:"output"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
+	// Restartable is false for jobs restored after a restart: the analysed
+	// stream is gone, so a stream-mode download cannot be run again.
+	Restartable bool `json:"restartable"`
 
 	Owner     int64    `json:"-"`
 	HistoryID int64    `json:"-"`
@@ -86,7 +90,30 @@ type Job struct {
 	tempPath   string
 	cancel     context.CancelFunc
 	lastNotify time.Time
+	lastSave   time.Time
 	removed    bool
+}
+
+// Record is a persisted job.
+type Record struct {
+	ID        string
+	Owner     int64
+	Data      []byte
+	UpdatedAt time.Time
+}
+
+// Persister stores the queue so that it survives restarts.
+type Persister interface {
+	SaveJob(Record) error
+	DeleteJob(id string) error
+	LoadJobs() ([]Record, error)
+}
+
+// stored is the JSON shape of a persisted job (cookies are never stored).
+type stored struct {
+	Job
+	Owner     int64 `json:"owner"`
+	HistoryID int64 `json:"history_id"`
 }
 
 // Event is pushed to subscribers.
@@ -117,6 +144,11 @@ type Manager struct {
 
 	// OnFinish is called (outside the lock) when a job reaches a terminal state.
 	OnFinish func(j Job)
+	// Store persists the queue (optional).
+	Store Persister
+
+	stopping bool
+	work     sync.WaitGroup // running workers, awaited on shutdown
 }
 
 // NewManager creates a manager and cleans stale temp files.
@@ -140,8 +172,72 @@ func NewManager(runner *media.Runner, maxJobs int, tempDir string, tempTTL, rete
 // snapshot copies a job for safe use outside the lock.
 func (j *Job) snapshot() *Job {
 	c := *j
+	c.Restartable = j.Prepare != nil
 	c.Prepare, c.cancel = nil, nil
 	return &c
+}
+
+// save writes a job snapshot to the store (outside the lock).
+func (m *Manager) save(snap *Job) {
+	if m.Store == nil {
+		return
+	}
+	data, err := json.Marshal(stored{Job: *snap, Owner: snap.Owner, HistoryID: snap.HistoryID})
+	if err == nil {
+		err = m.Store.SaveJob(Record{ID: snap.ID, Owner: snap.Owner, Data: data, UpdatedAt: snap.UpdatedAt})
+	}
+	if err != nil {
+		m.log.Warn("cannot persist job", "job", snap.ID, "err", err)
+	}
+}
+
+// Restore loads the persisted queue. Jobs that were still active when the
+// server stopped are marked failed (their processes are gone); prepared temp
+// files were deleted at startup, so ready jobs become expired.
+func (m *Manager) Restore() error {
+	if m.Store == nil {
+		return nil
+	}
+	recs, err := m.Store.LoadJobs()
+	if err != nil {
+		return err
+	}
+	for _, r := range recs {
+		var s stored
+		if err := json.Unmarshal(r.Data, &s); err != nil || s.ID == "" {
+			_ = m.Store.DeleteJob(r.ID)
+			continue
+		}
+		j := s.Job
+		j.Owner, j.HistoryID = s.Owner, s.HistoryID
+		if time.Since(j.UpdatedAt) > m.retention {
+			_ = m.Store.DeleteJob(j.ID)
+			continue
+		}
+		interrupted := !j.State.Terminal()
+		if interrupted {
+			if j.State == StateReady {
+				j.State, j.Error = StateExpired, "the prepared file was removed when the server restarted"
+			} else {
+				j.State, j.Error = StateFailed, "interrupted by a server restart"
+			}
+			j.UpdatedAt = time.Now()
+		}
+		m.mu.Lock()
+		m.jobs[j.ID] = &j
+		snap := j.snapshot()
+		m.mu.Unlock()
+		if interrupted {
+			m.save(snap)
+			if m.OnFinish != nil {
+				m.OnFinish(*snap)
+			}
+		}
+	}
+	if len(recs) > 0 {
+		m.log.Info("job queue restored", "jobs", len(m.jobs))
+	}
+	return nil
 }
 
 func (m *Manager) emit(ev Event) {
@@ -173,7 +269,15 @@ func (m *Manager) update(j *Job, fn func(j *Job)) {
 		m.emit(Event{Type: "job", Job: snap, owner: j.Owner})
 	}
 	finished := j.State.Terminal() && !prev.Terminal()
+	// Persist state changes right away, progress at most every 5 seconds.
+	persist := !j.removed && (j.State != prev || time.Since(j.lastSave) > 5*time.Second)
+	if persist {
+		j.lastSave = time.Now()
+	}
 	m.mu.Unlock()
+	if persist {
+		m.save(snap)
+	}
 	if finished && m.OnFinish != nil {
 		m.OnFinish(*snap)
 	}
@@ -190,11 +294,13 @@ func (m *Manager) Add(j *Job) *Job {
 	}
 	m.mu.Lock()
 	m.jobs[j.ID] = j
+	j.lastSave = time.Now()
 	snap := j.snapshot()
 	m.emit(Event{Type: "job", Job: snap, owner: j.Owner})
 	m.mu.Unlock()
+	m.save(snap)
 	if j.Mode == ModeFile {
-		go m.runFile(j)
+		m.work.Go(func() { m.runFile(j) })
 	}
 	return snap
 }
@@ -281,6 +387,13 @@ func (m *Manager) Remove(id string, owner int64) error {
 	}
 	j.removed = true
 	delete(m.jobs, id)
+	if m.Store != nil {
+		defer func() {
+			if err := m.Store.DeleteJob(id); err != nil {
+				m.log.Warn("cannot delete persisted job", "job", id, "err", err)
+			}
+		}()
+	}
 	m.emit(Event{Type: "removed", ID: id, owner: j.Owner})
 	m.mu.Unlock()
 	m.removeTemp(j)
@@ -313,7 +426,14 @@ func (m *Manager) progressFn(j *Job) func(media.Progress) {
 }
 
 func (m *Manager) finishErr(ctx context.Context, j *Job, err error) {
+	m.mu.Lock()
+	stopping := m.stopping
+	m.mu.Unlock()
 	m.update(j, func(j *Job) {
+		if stopping {
+			j.State, j.Error = StateFailed, "interrupted by a server shutdown"
+			return
+		}
 		if ctx.Err() != nil {
 			j.State = StateCanceled
 			return
@@ -394,6 +514,11 @@ func (m *Manager) Serve(w http.ResponseWriter, r *http.Request, j *Job) {
 
 func (m *Manager) serveStream(w http.ResponseWriter, r *http.Request, j *Job) {
 	m.mu.Lock()
+	if j.Prepare == nil {
+		m.mu.Unlock()
+		http.Error(w, "this download was restored after a server restart and cannot be run again; grab the page again", http.StatusGone)
+		return
+	}
 	if j.State == StateQueued || j.State == StateRunning {
 		m.mu.Unlock()
 		http.Error(w, "this download is already in progress", http.StatusConflict)
@@ -402,6 +527,8 @@ func (m *Manager) serveStream(w http.ResponseWriter, r *http.Request, j *Job) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	j.cancel = cancel
+	m.work.Add(1)
+	defer m.work.Done()
 	m.mu.Unlock()
 
 	m.update(j, func(j *Job) { j.State, j.Error, j.Progress, j.Size = StateQueued, "", media.Progress{}, 0 })
@@ -566,9 +693,15 @@ func (m *Manager) Janitor(ctx context.Context) {
 	}
 }
 
-// Shutdown cancels all running jobs and deletes temp files.
+// Shutdown cancels all running jobs, waits (briefly) for them to record
+// their final state and deletes temp files.
 func (m *Manager) Shutdown() {
 	m.mu.Lock()
+	if m.stopping {
+		m.mu.Unlock()
+		return
+	}
+	m.stopping = true
 	var all []*Job
 	for _, j := range m.jobs {
 		all = append(all, j)
@@ -581,6 +714,15 @@ func (m *Manager) Shutdown() {
 		if c != nil {
 			c()
 		}
+	}
+	done := make(chan struct{})
+	go func() { m.work.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		m.log.Warn("some jobs did not stop in time")
+	}
+	for _, j := range all {
 		m.removeTemp(j)
 	}
 }
